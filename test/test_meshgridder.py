@@ -5,6 +5,7 @@ Property-based tests for the mesh gridder.
 import drjit as dr
 import mitsuba as mi
 import numpy as np
+from pytest import approx
 from scipy.spatial import Delaunay
 
 from meshgridder import BoundingBox, Grid, compute_cell_areas, polygon_area
@@ -32,7 +33,7 @@ def test_grid_partitions_triangle():
 
     # sum of polygon areas should be triangle area
     total_polygon_area = sum(polygon_area(vs, dim="2d") for vs in polygons)
-    assert total_polygon_area == polygon_area(tri_vertices, dim="2d")
+    assert total_polygon_area == approx(polygon_area(tri_vertices, dim="2d"))
 
 
 def test_correct_cell_area_sum():
@@ -49,7 +50,7 @@ def test_correct_cell_area_sum():
     for tri_vertices in vertices[faces]:
         true_surface_area += polygon_area(tri_vertices, dim="3d")
 
-    assert total_surface_area == true_surface_area
+    assert total_surface_area == approx(true_surface_area)
 
 
 def random_mi_mesh(size=(6, 7), grid_size=(8, 12), offset=(1, 2)):
