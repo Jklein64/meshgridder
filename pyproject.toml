@@ -1,0 +1,10 @@
+[project]
+name = "meshgridder"
+version = "0.0.1"
+authors = [{ name = "Jason Klein", email = "kleinjason234@gmail.com" }]
+description = "Python package to efficiently partition a Mitsuba mesh into a grid of cells and calculate each cell's surface area."
+readme = "README.md"
+requires-python = ">=3.8"
+license = "MIT"
+license-files = ["LICEN[CS]E*"]
+dependencies = ["sionna>=1.0.0"]
