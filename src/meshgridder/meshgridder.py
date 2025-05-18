@@ -4,11 +4,77 @@ Calculate the surface areas of rectangular cells wrapped onto a mesh.
 
 import mitsuba as mi
 import numpy as np
+from typing import Literal
 
 
-def compute_cell_areas(
-    mesh: "mi.Mesh", grid_rows: int, grid_cols: int
-) -> np.ndarray: ...
+def wedge(a, b):
+    """2d wedge product"""
+    return a[0] * b[1] - a[1] * b[0]
+
+
+def polygon_area(vertices, dim: Literal["2d"] | Literal["3d"]):
+    """
+    Uses the exterior algebra formulation of the Shoelace theorem to calculate
+    the area of the polygon with the given vertices. Assumes the vertices are
+    in counter-clockwise order.
+    """
+    area = 0
+    n = len(vertices)
+    for i in range(len(vertices)):
+        # sum the signed triangle areas. sign matters!
+        match dim:
+            case "2d":
+                area += wedge(vertices[i], vertices[(i + 1) % n])
+            case "3d":
+                # https://en.wikipedia.org/wiki/Shoelace_formula#Generalization
+                area += np.cross(vertices[i], vertices[(i + 1) % n])
+    return np.linalg.norm(area) / 2
+
+
+def compute_cell_areas(mesh, grid_rows: int, grid_cols: int) -> np.ndarray:
+    grid = Grid(grid_rows, grid_cols)
+    cell_areas = np.zeros((grid.rows, grid.cols))
+
+    # get texcoords and connectivity
+    mesh_params = mi.traverse(mesh)
+    uv_vertices = np.array(mesh_params["vertex_texcoords"]).reshape(-1, 2)
+    faces = np.array(mesh_params["faces"]).reshape(-1, 3)
+
+    for tri_vertices in uv_vertices[faces]:
+        bbox_uv = BoundingBox.from_points(tri_vertices)
+        bbox_ji = bbox_uv.scaled(grid.cols, grid.rows).snapped()
+        for cell_i in range(grid.rows):
+            for cell_j in range(grid.cols):
+                # skip cells outside triangle bbox
+                if (cell_j, cell_i) not in bbox_ji:
+                    continue
+
+                # intersection polygon vertices in uv space
+                int_uvs = grid.clip_to_cell(tri_vertices, cell_i, cell_j)
+                if len(int_uvs) < 3:
+                    continue
+
+                # attempt to map back to xyz space
+                si = mesh.eval_parameterization(mi.Point2f(int_uvs.T))
+                mask = ~np.isfinite(si.t)
+
+                # nudge until all t are finite
+                if np.any(mask):
+                    nudged_uvs = np.copy(int_uvs)
+                    c = np.mean(nudged_uvs, axis=0)
+                    t = np.finfo(np.float64).eps
+                    while np.any(mask):
+                        nudged_uvs[mask] = (1 - t) * int_uvs[mask] + t * c
+                        si = mesh.eval_parameterization(
+                            mi.Point2d(nudged_uvs.T)
+                        )
+                        mask = ~np.isfinite(si.t)
+                        t *= 2
+
+                # intersection polygon vertices in xyz space
+                int_xyz = np.array(si.p).T
+                cell_areas[cell_i, cell_j] += polygon_area(int_xyz, dim="3d")
+    return cell_areas
 
 
 class Grid:
@@ -26,15 +92,6 @@ class Grid:
     def clip_to_cell(self, vertices, cell_i, cell_j):
         corners = self._cell_corners(cell_i, cell_j)
         return np.array(self._sutherland_hodgman(corners, vertices))
-
-    # def plot(self, ax=None):
-    #     if ax is None:
-    #         ax = plt.gca()
-    #     x_ticks = self.cell_spacing_x * np.arange(self.cols + 1)
-    #     y_ticks = self.cell_spacing_y * np.arange(self.rows + 1)
-    #     ax.set_xticks(x_ticks)
-    #     ax.set_yticks(y_ticks)
-    #     ax.grid(visible=True)
 
     # utility functions
 
