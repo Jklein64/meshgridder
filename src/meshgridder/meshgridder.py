@@ -6,7 +6,9 @@ import mitsuba as mi
 import numpy as np
 
 
-def compute_cell_areas(mesh: mi.Mesh, grid_rows: int, grid_cols: int) -> np.ndarray: ...
+def compute_cell_areas(
+    mesh: "mi.Mesh", grid_rows: int, grid_cols: int
+) -> np.ndarray: ...
 
 
 class Grid:
@@ -87,7 +89,9 @@ class Grid:
                 intersection_point = self._intersect(line=line, segment=segment)
                 # negate wedge due to texcoord "y" (actually v) axis being
                 # flipped from the standard cartesian coordinate system
-                ends_inside = self._wedge(line_end - line_start, seg_end - line_end) < 0
+                ends_inside = (
+                    self._wedge(line_end - line_start, seg_end - line_end) < 0
+                )
                 if ends_inside:
                     if intersection_point is not None:
                         new_polygon_vertices.append(intersection_point)
@@ -97,7 +101,7 @@ class Grid:
                 else:
                     if intersection_point is not None:
                         new_polygon_vertices.append(intersection_point)
-                    # only happens when triangle is smaller than clipping rectangle
+                    # happens when triangle is smaller than clipping rectangle
                     elif seg_start in clip_bbox:
                         if seg_end in clip_bbox:
                             new_polygon_vertices.append(seg_start)
