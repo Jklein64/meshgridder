@@ -2,9 +2,10 @@
 Calculate the surface areas of rectangular cells wrapped onto a mesh.
 """
 
+from typing import Literal
+
 import mitsuba as mi
 import numpy as np
-from typing import Literal
 
 
 def wedge(a, b):

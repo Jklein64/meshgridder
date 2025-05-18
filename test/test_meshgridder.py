@@ -2,11 +2,12 @@
 Property-based tests for the mesh gridder.
 """
 
+import drjit as dr
+import mitsuba as mi
 import numpy as np
 from scipy.spatial import Delaunay
-import mitsuba as mi
-import drjit as dr
-from meshgridder import Grid, BoundingBox, polygon_area, compute_cell_areas
+
+from meshgridder import BoundingBox, Grid, compute_cell_areas, polygon_area
 
 mi.set_variant("llvm_ad_rgb")
 
