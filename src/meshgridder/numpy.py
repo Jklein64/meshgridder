@@ -6,13 +6,16 @@ from typing import Literal
 
 import mitsuba as mi
 import numpy as np
+from line_profiler import profile
 
 
+@profile
 def wedge(a, b):
     """2d wedge product"""
     return a[0] * b[1] - a[1] * b[0]
 
 
+@profile
 def polygon_area(vertices, dim: Literal["2d"] | Literal["3d"]):
     """
     Uses the exterior algebra formulation of the Shoelace theorem to calculate
@@ -32,6 +35,7 @@ def polygon_area(vertices, dim: Literal["2d"] | Literal["3d"]):
     return np.linalg.norm(area) / 2
 
 
+@profile
 def compute_cell_areas(mesh, grid_rows: int, grid_cols: int) -> np.ndarray:
     grid = Grid(grid_rows, grid_cols)
     cell_areas = np.zeros((grid.rows, grid.cols))
@@ -90,12 +94,14 @@ class Grid:
         self.cell_spacing_y = 1 / self.rows
         self.spacing = np.array([self.cell_spacing_x, self.cell_spacing_y])
 
+    @profile
     def clip_to_cell(self, vertices, cell_i, cell_j):
         corners = self._cell_corners(cell_i, cell_j)
         return np.array(self._sutherland_hodgman(corners, vertices))
 
     # utility functions
 
+    @profile
     def _cell_corners(self, cell_i, cell_j):
         top_left = self.spacing * np.array([cell_j, cell_i])
         bottom_left = self.spacing * np.array([cell_j, cell_i + 1])
@@ -103,13 +109,16 @@ class Grid:
         top_right = self.spacing * np.array([cell_j + 1, cell_i])
         return np.array([top_left, bottom_left, bottom_right, top_right])
 
+    @profile
     def _vertices_to_edges(self, vertices):
         return np.stack([vertices, np.roll(vertices, -1, axis=0)], axis=1)
 
+    @profile
     def _wedge(self, a, b):
         """Wedge (exterior) product of 2D vectors a and b."""
         return a[0] * b[1] - a[1] * b[0]
 
+    @profile
     def _intersect(self, line, segment, tol=np.finfo(np.float64).eps):
         u1, u2 = line
         u2 = u2 - u1
@@ -131,6 +140,7 @@ class Grid:
             else:
                 return w1 + t * w2
 
+    @profile
     def _sutherland_hodgman(self, clip_vertices, polygon_vertices):
         """
         Given the vertices of a convex polygon and clipping rectangle (both

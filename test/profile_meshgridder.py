@@ -2,11 +2,11 @@
 Computes cell areas for a random mesh to simulate a typical workload.
 """
 
-import cProfile
 from argparse import ArgumentParser
 from sys import argv
 
 import mitsuba as mi
+from line_profiler import profile
 from util import random_mi_mesh
 
 from meshgridder.numpy import compute_cell_areas
@@ -16,9 +16,12 @@ mi.set_variant("llvm_ad_rgb")
 
 def main(grid_rows, grid_cols, outfile):
     mesh = random_mi_mesh()
-    with cProfile.Profile() as profiler:
+
+    @profile
+    def f():
         compute_cell_areas(mesh, grid_rows, grid_cols)
-        profiler.dump_stats(outfile)
+
+    f()
 
 
 if __name__ == "__main__":
