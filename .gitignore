@@ -1,9 +1,13 @@
 .DS_Store
 .vscode
 __pycache__/
+.pytest_cache
 
 # venv
 venv
 
 # build
 *.egg-info
+
+# profiles
+test/profiles
