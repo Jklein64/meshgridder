@@ -7,7 +7,7 @@ import mitsuba as mi
 import numpy as np
 from scipy.spatial import Delaunay
 
-from meshgridder.numpy import BoundingBox
+from meshgridder.np import BoundingBox
 
 
 def random_mi_mesh(size=(6, 7), grid_size=(8, 12), offset=(1, 2)):

@@ -7,12 +7,7 @@ import numpy as np
 from pytest import approx
 from util import random_mi_mesh
 
-from meshgridder.numpy import (
-    BoundingBox,
-    Grid,
-    compute_cell_areas,
-    polygon_area,
-)
+from meshgridder.np import BoundingBox, Grid, compute_cell_areas, polygon_area
 
 mi.set_variant("llvm_ad_rgb")
 

@@ -9,7 +9,7 @@ from sys import argv
 import mitsuba as mi
 from util import random_mi_mesh
 
-from meshgridder.numpy import compute_cell_areas
+from meshgridder.np import compute_cell_areas
 
 mi.set_variant("llvm_ad_rgb")
 
