@@ -4,6 +4,7 @@ Calculate the surface areas of rectangular cells wrapped onto a mesh.
 
 from typing import Literal
 
+import drjit as dr
 import mitsuba as mi
 import numpy as np
 
@@ -57,19 +58,18 @@ def compute_cell_areas(mesh, grid_rows: int, grid_cols: int) -> np.ndarray:
 
                 # attempt to map back to xyz space
                 si = mesh.eval_parameterization(mi.Point2f(int_uvs.T))
-                mask = ~np.isfinite(si.t)
-
+                mask = dr.isinf(si.t)
                 # nudge until all t are finite
-                if np.any(mask):
-                    nudged_uvs = np.copy(int_uvs)
-                    c = np.mean(nudged_uvs, axis=0)
+                if dr.any(mask):
+                    int_uvs = dr.auto.ad.Array2f(int_uvs.T)
+                    nudged_uvs = dr.copy(int_uvs)
+                    # drjit array is (2, n)
+                    c = dr.mean(nudged_uvs, axis=1)
                     t = np.finfo(np.float64).eps
-                    while np.any(mask):
+                    while dr.any(mask):
                         nudged_uvs[mask] = (1 - t) * int_uvs[mask] + t * c
-                        si = mesh.eval_parameterization(
-                            mi.Point2d(nudged_uvs.T)
-                        )
-                        mask = ~np.isfinite(si.t)
+                        si = mesh.eval_parameterization(nudged_uvs)
+                        mask = dr.isinf(si.t)
                         t *= 2
 
                 # intersection polygon vertices in xyz space
