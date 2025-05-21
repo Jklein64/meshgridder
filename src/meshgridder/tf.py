@@ -5,7 +5,8 @@ parallelized using the TensorFlow computation graph.
 
 from typing import Literal
 
-# import mitsuba as mi
+import drjit as dr
+import mitsuba as mi
 import tensorflow as tf
 
 
@@ -31,6 +32,73 @@ def polygon_area(vertices, dim: Literal["2d"] | Literal["3d"]):
                 # https://en.wikipedia.org/wiki/Shoelace_formula#Generalization
                 area += tf.linalg.cross(vertices[i], vertices[(i + 1) % n])
     return tf.norm(area) / 2
+
+
+def _nudge(mesh, coords, mask):
+    """
+    Nudges the given intersection polygon uv coordinates so that their
+    evaluation gives a nearby point on the mesh. This function should only
+    be called when the evaluation of the given uv coordinates lies fails
+    to intersect the mesh. This function gives input and output as drjit
+    objects. Returns the xyz coords of the evaluated intersection polygon.
+    """
+    nudged_coords = dr.copy(coords)
+    centroid = dr.mean(nudged_coords, axis=1)
+    t = 1e-10  # minimum starting nudge distance
+    while dr.any(mask):
+        nudged_coords[mask] = (1 - t) * coords[mask] + t * centroid
+        si = mesh.eval_parameterization(nudged_coords)
+        mask = dr.isinf(si.t)
+        t *= 2
+    return si.p
+
+
+# TODO
+def _compute_cell_areas_tf(mesh, grid, triangles, cell_areas):
+    """Subroutine to be wrapped in tf.function."""
+    for triangle in tf.unstack(triangles, axis=0):
+        bbox = BoundingBox.from_points(triangle)
+        # skip cells outside the triangle's bounding box
+        row_min = int(bbox.y_min * grid.rows)
+        row_max = int(bbox.y_max * grid.rows) + 1
+        col_min = int(bbox.x_min * grid.cols)
+        col_max = int(bbox.x_max * grid.cols) + 1
+        for cell_i in range(row_min, row_max):
+            for cell_j in range(col_min, col_max):
+
+                # intersection polygon vertices in uv space
+                int_uvs = grid.clip_to_cell(triangle, cell_i, cell_j)
+                if len(int_uvs) < 3:
+                    continue
+
+                # attempt to map back to xyz space
+                si = mesh.eval_parameterization(mi.Point2f(int_uvs.T))
+                mask = dr.isinf(si.t)
+                # nudge until all t are finite
+                if dr.any(mask):
+                    int_uvs = dr.auto.ad.Array2f(int_uvs.T)
+                    # intersection polygon vertices in xyz space
+                    int_xyz = _nudge(mesh, int_uvs, mask).numpy().T
+                else:
+                    # intersection polygon vertices in xyz space
+                    int_xyz = si.p.numpy().T
+
+                cell_areas[cell_i, cell_j] += polygon_area(int_xyz, dim="3d")
+
+    return cell_areas
+
+
+def compute_cell_areas(mesh, grid_rows: int, grid_cols: int):
+    grid = Grid(grid_rows, grid_cols)
+    cell_areas = tf.zeros((grid.rows, grid.cols))
+
+    # get texcoords and connectivity
+    mesh_params = mi.traverse(mesh)
+    uvs = tf.reshape(mesh_params["vertex_texcoords"].tf(), (-1, 2))
+    # last shape axis needs to be 1 so that gather_nd reads vectors
+    faces = tf.reshape(mesh_params["faces"].tf(), (-1, 3, 1))
+    triangles = tf.gather_nd(uvs, tf.cast(faces, dtype=tf.int64))
+    return _compute_cell_areas_tf(mesh, grid, triangles, cell_areas)
 
 
 class Grid:
@@ -149,19 +217,3 @@ class BoundingBox:
         x = point[0]
         y = point[1]
         return self.x_min <= x <= self.x_max and self.y_min <= y <= self.y_max
-
-    def scaled(self, x_scale, y_scale):
-        return BoundingBox(
-            self.x_min * x_scale,
-            self.x_max * x_scale,
-            self.y_min * y_scale,
-            self.y_max * y_scale,
-        )
-
-    def snapped(self):
-        return BoundingBox(
-            x_min=tf.floor(self.x_min),
-            x_max=tf.ceil(self.x_max),
-            y_min=tf.floor(self.y_min),
-            y_max=tf.ceil(self.y_max),
-        )
