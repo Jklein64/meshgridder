@@ -2,6 +2,10 @@
 Calculate the surface areas of rectangular cells wrapped onto a mesh.
 """
 
+from functools import partial
+from multiprocessing import Pool
+from multiprocessing.managers import SharedMemoryManager
+from multiprocessing.shared_memory import SharedMemory
 from typing import Literal
 
 import drjit as dr
@@ -33,6 +37,85 @@ def polygon_area(vertices, dim: Literal["2d"] | Literal["3d"]):
     return np.linalg.norm(area) / 2
 
 
+def compute_cell_areas(mesh, grid_rows: int, grid_cols: int) -> np.ndarray:
+    grid = Grid(grid_rows, grid_cols)
+    with open("debug.txt", "w") as outfile:
+        with SharedMemoryManager() as smm:
+            shm = smm.SharedMemory(size=grid.rows * grid.cols)
+            cell_areas = np.ndarray(
+                shape=(grid.rows, grid.cols),
+                dtype=np.float32,
+                buffer=shm.buf,
+            )
+            # zero initialize, since that isn't guaranteed by SharedMemory
+            cell_areas[:, :] = np.zeros((grid.rows, grid.cols))
+
+            # get texcoords and connectivity
+            mesh_params = mi.traverse(mesh)
+            uv_vertices = mesh_params["vertex_texcoords"].numpy().reshape(-1, 2)
+            faces = mesh_params["faces"].numpy().reshape(-1, 3)
+
+            for triangle in uv_vertices[faces]:
+                bbox_uv = BoundingBox.from_points(triangle)
+                # skip cells outside the triangle's bounding box
+                row_min = int(np.floor(bbox_uv.y_min * grid.rows))
+                row_max = int(np.ceil(bbox_uv.y_max * grid.rows))
+                col_min = int(np.floor(bbox_uv.x_min * grid.cols))
+                col_max = int(np.ceil(bbox_uv.x_max * grid.cols))
+                # indices are unique, so cell updates here are guaranteed to not
+                # lead to data races. share across processes with shared memory
+                rows = np.arange(row_min, row_max)
+                cols = np.arange(col_min, col_max)
+                indices = np.squeeze(np.stack(np.meshgrid(rows, cols), axis=2))
+                print(indices)
+
+                with Pool() as pool:
+                    fn = partial(
+                        _compute_cell_area,
+                        mesh=mesh,
+                        grid=grid,
+                        triangle=triangle,
+                        cell_areas=cell_areas,
+                        f=outfile,
+                    )
+                    res = pool.imap(fn, indices, chunksize=10)
+                # for cell_i in range(row_min, row_max):
+                #     for cell_j in range(col_min, col_max):
+                #         cell_areas[cell_i, cell_j] += _compute_cell_area(
+                #             mesh, grid, triangle, cell_i, cell_j
+                #         )
+
+            # make a copy to avoid returning a dangling pointer
+            cell_areas_copy = np.zeros_like(cell_areas)
+            cell_areas_copy[...] = cell_areas
+            return cell_areas_copy
+
+
+def _compute_cell_area(mesh, grid, triangle, indices, cell_areas, f):
+    f.write(
+        f"called with mesh={mesh}, grid={grid}, triangle={triangle}, indices={indices}, cell_areas={cell_areas}\n"
+    )
+    for cell_i, cell_j in indices:
+        # intersection polygon vertices in uv space
+        int_uvs = grid.clip_to_cell(triangle, cell_i, cell_j)
+        if len(int_uvs) < 3:
+            return 0
+
+        # attempt to map back to xyz space
+        si = mesh.eval_parameterization(mi.Point2f(int_uvs.T))
+        mask = dr.isinf(si.t)
+        # nudge until all t are finite
+        if dr.any(mask):
+            int_uvs = dr.auto.ad.Array2f(int_uvs.T)
+            # intersection polygon vertices in xyz space
+            int_xyz = _nudge(mesh, int_uvs, mask).numpy().T
+        else:
+            # intersection polygon vertices in xyz space
+            int_xyz = si.p.numpy().T
+
+        cell_areas[cell_i, cell_j] += polygon_area(int_xyz, dim="3d")
+
+
 def _nudge(mesh, coords, mask):
     """
     Nudges the given intersection polygon uv coordinates so that their
@@ -50,46 +133,6 @@ def _nudge(mesh, coords, mask):
         mask = dr.isinf(si.t)
         t *= 2
     return si.p
-
-
-def compute_cell_areas(mesh, grid_rows: int, grid_cols: int) -> np.ndarray:
-    grid = Grid(grid_rows, grid_cols)
-    cell_areas = np.zeros((grid.rows, grid.cols))
-
-    # get texcoords and connectivity
-    mesh_params = mi.traverse(mesh)
-    uv_vertices = mesh_params["vertex_texcoords"].numpy().reshape(-1, 2)
-    faces = mesh_params["faces"].numpy().reshape(-1, 3)
-
-    for tri_vertices in uv_vertices[faces]:
-        bbox_uv = BoundingBox.from_points(tri_vertices)
-        # skip cells outside the triangle's bounding box
-        row_min = int(bbox_uv.y_min * grid.rows)
-        row_max = int(bbox_uv.y_max * grid.rows) + 1
-        col_min = int(bbox_uv.x_min * grid.cols)
-        col_max = int(bbox_uv.x_max * grid.cols) + 1
-        for cell_i in range(row_min, row_max):
-            for cell_j in range(col_min, col_max):
-
-                # intersection polygon vertices in uv space
-                int_uvs = grid.clip_to_cell(tri_vertices, cell_i, cell_j)
-                if len(int_uvs) < 3:
-                    continue
-
-                # attempt to map back to xyz space
-                si = mesh.eval_parameterization(mi.Point2f(int_uvs.T))
-                mask = dr.isinf(si.t)
-                # nudge until all t are finite
-                if dr.any(mask):
-                    int_uvs = dr.auto.ad.Array2f(int_uvs.T)
-                    # intersection polygon vertices in xyz space
-                    int_xyz = _nudge(mesh, int_uvs, mask).numpy().T
-                else:
-                    # intersection polygon vertices in xyz space
-                    int_xyz = si.p.numpy().T
-
-                cell_areas[cell_i, cell_j] += polygon_area(int_xyz, dim="3d")
-    return cell_areas
 
 
 class Grid:
