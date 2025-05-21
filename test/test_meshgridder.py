@@ -111,6 +111,27 @@ def test_correct_cell_area_sum_np():
     assert total_surface_area == approx(true_surface_area, rel=1e-5)
 
 
+def test_correct_cell_area_sum_dr():
+    from meshgridder.dr import compute_cell_areas
+    from meshgridder.np import polygon_area
+
+    # create a random mesh
+    mi_mesh = random_mi_mesh()
+    cell_areas = compute_cell_areas(mi_mesh, grid_rows=12, grid_cols=8)
+    total_surface_area = np.sum(cell_areas)
+
+    # compute true area by summing triangle areas
+    true_surface_area = 0
+    params = mi.traverse(mi_mesh)
+    vertices = np.array(params["vertex_positions"]).reshape(-1, 3)
+    faces = np.array(params["faces"]).reshape(-1, 3)
+    for tri_vertices in vertices[faces]:
+        true_surface_area += polygon_area(tri_vertices, dim="3d")
+
+    # expect relative error of 1e-5 instead of 1e-6 due to the nudging
+    assert total_surface_area == approx(true_surface_area, rel=1e-5)
+
+
 # def test_correct_cell_area_sum_tf():
 #     from meshgridder.tf import compute_cell_areas, polygon_area
 

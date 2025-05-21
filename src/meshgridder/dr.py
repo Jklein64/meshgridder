@@ -5,12 +5,16 @@ Calculate the surface areas of rectangular cells wrapped onto a mesh with drjit.
 import drjit as dr
 import mitsuba as mi
 
+mi.set_variant("llvm_ad_rgb")
+from drjit.auto.ad import Float, TensorXf, TensorXu, UInt
+from mitsuba import Point2f, Point3f
 
-def wedge_2d(a: mi.Point2f, b: mi.Point2f):
+
+def wedge_2d(a: Point2f, b: Point2f):
     return a.x * b.y - a.y * b.x
 
 
-def polygon_area_2d(vertices: list[mi.Point2f]):
+def polygon_area_2d(vertices: list[Point2f]):
     area = 0
     n = len(vertices)
     for i in range(n):
@@ -19,7 +23,7 @@ def polygon_area_2d(vertices: list[mi.Point2f]):
     return area / 2
 
 
-def polygon_area_3d(vertices: list[mi.Point3f]):
+def polygon_area_3d(vertices: list[Point3f]):
     area = mi.Point3f(0, 0, 0)
     n = len(vertices)
     for i in range(n):
@@ -28,13 +32,92 @@ def polygon_area_3d(vertices: list[mi.Point3f]):
     return dr.norm(area) / 2
 
 
+def compute_cell_areas(mesh, grid_rows: int, grid_cols: int):
+    grid = Grid(grid_rows, grid_cols)
+    cell_areas = dr.zeros(TensorXf, shape=(grid_rows, grid_cols))
+    # get triangles from texcoord and face information
+    mesh_params = mi.traverse(mesh)
+    # unravel vertices and faces arrays into triangles
+    triangles = []
+    vertices = dr.reshape(Point2f, mesh_params["vertex_texcoords"], (-1, 2))
+    for face in dr.reshape(TensorXu, mesh_params["faces"], (-1, 3)):
+        triangle = []
+        for i in face:
+            triangle.append(dr.gather(Point2f, vertices, UInt(i)))
+        triangles.append(triangle)
+
+    for triangle in triangles:
+        bbox = BoundingBox.from_points(triangle)
+        # skip cells outside the triangle's bounding box
+        row_min = dr.floor(bbox.y_min * grid.rows)
+        row_max = dr.floor(bbox.y_max * grid.rows + 1)
+        col_min = dr.floor(bbox.x_min * grid.cols)
+        col_max = dr.floor(bbox.x_max * grid.cols + 1)
+        cell_i = row_min
+        while cell_i < row_max:
+            # for cell_i in range(row_min, row_max):
+            cell_j = col_min
+            while cell_j < col_max:
+                # for cell_j in range(col_min, col_max):
+                # intersection polygon vertices in uv space
+                poly_uv = grid.clip_to_cell(triangle, cell_i, cell_j)
+                if len(poly_uv) < 3:
+                    continue
+                # attempt to map back to xyz space
+                uv_combined = _point_list_to_nested_array(poly_uv)
+                si = mesh.eval_parameterization(uv_combined)
+                mask = dr.isinf(si.t)
+                # nudge until all t are finite
+                if dr.any(mask):
+                    # intersection polygon vertices in xyz space
+                    poly_xyz = _nudge(mesh, uv_combined, mask)
+                else:
+                    # intersection polygon vertices in xyz space
+                    poly_xyz = si.p
+                cell_areas[cell_i, cell_j] += polygon_area_3d(
+                    _nested_array_to_point_list(poly_xyz)
+                )
+                cell_j += 1
+            cell_i += 1
+
+    return cell_areas
+
+
+def _nudge(mesh, coords, mask):
+    nudged_coords = dr.copy(coords)
+    centroid = dr.mean(nudged_coords, axis=1)
+    t = 1e-10
+    while dr.any(mask):
+        nudged_coords[mask] = (1 - t) * coords[mask] + t * centroid
+        si = mesh.eval_parameterization(nudged_coords)
+        mask = dr.isinf(si.t)
+        t *= 2
+    return si.p
+
+
+def _point_list_to_nested_array(points: list[Point2f]):
+    # return None
+    print(points)
+    print(points[0])
+    print(points[0].x)
+    return mi.Point2f([p.x for p in points], [p.y for p in points])
+
+
+def _nested_array_to_point_list(points: Point2f):
+    _, n = dr.shape(points)
+    point_list = []
+    for i in range(n):
+        point_list.append(dr.gather(Point2f, points, UInt(i)))
+    return point_list
+
+
 class Grid:
     def __init__(self, rows, cols):
         self.rows = rows
         self.cols = cols
         self.spacing = mi.Point2f(1 / self.cols, 1 / self.rows)
 
-    def clip_to_cell(self, vertices: list[mi.Point2f], cell_i, cell_j):
+    def clip_to_cell(self, vertices: list[Point2f], cell_i, cell_j):
         corners = [
             # get cell corners CCW from top left
             self.spacing * mi.Point2f(cell_j, cell_i),
@@ -80,8 +163,8 @@ class Grid:
 
     def _intersect(
         self,
-        line: tuple[mi.Point2f, mi.Point2f],
-        segment: tuple[mi.Point2f, mi.Point2f],
+        line: tuple[Point2f, Point2f],
+        segment: tuple[Point2f, Point2f],
         tol=1e-10,
     ):
         u1, u2 = line
@@ -115,7 +198,7 @@ class BoundingBox:
         self.height = y_max - y_min
 
     @staticmethod
-    def from_points(points: list[mi.Point2f]):
+    def from_points(points: list[Point2f]):
         x_min, y_min = float("inf"), float("inf")
         x_max, y_max = -float("inf"), -float("inf")
         for point in points:
@@ -129,9 +212,11 @@ class BoundingBox:
             elif point.y > y_max:
                 y_max = point.y
 
-        return BoundingBox(x_min, x_max, y_min, y_max)
+        return BoundingBox(
+            Float(x_min), Float(x_max), Float(y_min), Float(y_max)
+        )
 
-    def __contains__(self, point: mi.Point2f):
+    def __contains__(self, point: Point2f):
         return (
             self.x_min <= point.x <= self.x_max
             and self.y_min <= point.y <= self.y_max
