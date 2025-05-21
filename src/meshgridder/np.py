@@ -33,23 +33,43 @@ def polygon_area(vertices, dim: Literal["2d"] | Literal["3d"]):
     return np.linalg.norm(area) / 2
 
 
+def _nudge(mesh, coords, mask):
+    """
+    Nudges the given intersection polygon uv coordinates so that their
+    evaluation gives a nearby point on the mesh. This function should only
+    be called when the evaluation of the given uv coordinates lies fails
+    to intersect the mesh. This function exists entirely within drjit. Returns
+    the xyz coordinates of the evaluated intersection polygon.
+    """
+    nudged_coords = dr.copy(coords)
+    centroid = dr.mean(nudged_coords, axis=1)
+    t = np.finfo(np.float64).eps
+    while dr.any(mask):
+        nudged_coords[mask] = (1 - t) * coords[mask] + t * centroid
+        si = mesh.eval_parameterization(nudged_coords)
+        mask = dr.isinf(si.t)
+        t *= 2
+    return si.p
+
+
 def compute_cell_areas(mesh, grid_rows: int, grid_cols: int) -> np.ndarray:
     grid = Grid(grid_rows, grid_cols)
     cell_areas = np.zeros((grid.rows, grid.cols))
 
     # get texcoords and connectivity
     mesh_params = mi.traverse(mesh)
-    uv_vertices = np.array(mesh_params["vertex_texcoords"]).reshape(-1, 2)
-    faces = np.array(mesh_params["faces"]).reshape(-1, 3)
+    uv_vertices = mesh_params["vertex_texcoords"].numpy().reshape(-1, 2)
+    faces = mesh_params["faces"].numpy().reshape(-1, 3)
 
     for tri_vertices in uv_vertices[faces]:
         bbox_uv = BoundingBox.from_points(tri_vertices)
-        bbox_ji = bbox_uv.scaled(grid.cols, grid.rows).snapped()
-        for cell_i in range(grid.rows):
-            for cell_j in range(grid.cols):
-                # skip cells outside triangle bbox
-                if (cell_j, cell_i) not in bbox_ji:
-                    continue
+        # skip cells outside the triangle's bounding box
+        row_min = int(bbox_uv.y_min * grid.rows)
+        row_max = int(bbox_uv.y_max * grid.rows) + 1
+        col_min = int(bbox_uv.x_min * grid.cols)
+        col_max = int(bbox_uv.x_max * grid.cols) + 1
+        for cell_i in range(row_min, row_max):
+            for cell_j in range(col_min, col_max):
 
                 # intersection polygon vertices in uv space
                 int_uvs = grid.clip_to_cell(tri_vertices, cell_i, cell_j)
@@ -62,18 +82,12 @@ def compute_cell_areas(mesh, grid_rows: int, grid_cols: int) -> np.ndarray:
                 # nudge until all t are finite
                 if dr.any(mask):
                     int_uvs = dr.auto.ad.Array2f(int_uvs.T)
-                    nudged_uvs = dr.copy(int_uvs)
-                    # drjit array is (2, n)
-                    c = dr.mean(nudged_uvs, axis=1)
-                    t = np.finfo(np.float64).eps
-                    while dr.any(mask):
-                        nudged_uvs[mask] = (1 - t) * int_uvs[mask] + t * c
-                        si = mesh.eval_parameterization(nudged_uvs)
-                        mask = dr.isinf(si.t)
-                        t *= 2
+                    # intersection polygon vertices in xyz space
+                    int_xyz = _nudge(mesh, int_uvs, mask).numpy().T
+                else:
+                    # intersection polygon vertices in xyz space
+                    int_xyz = si.p.numpy().T
 
-                # intersection polygon vertices in xyz space
-                int_xyz = np.array(si.p).T
                 cell_areas[cell_i, cell_j] += polygon_area(int_xyz, dim="3d")
     return cell_areas
 
@@ -106,17 +120,13 @@ class Grid:
     def _vertices_to_edges(self, vertices):
         return np.stack([vertices, np.roll(vertices, -1, axis=0)], axis=1)
 
-    def _wedge(self, a, b):
-        """Wedge (exterior) product of 2D vectors a and b."""
-        return a[0] * b[1] - a[1] * b[0]
-
     def _intersect(self, line, segment, tol=np.finfo(np.float64).eps):
         u1, u2 = line
         u2 = u2 - u1
         w1, w2 = segment
         w2 = w2 - w1
-        numerator = self._wedge(u1 - w1, u2)
-        denominator = self._wedge(w2, u2)
+        numerator = wedge(u1 - w1, u2)
+        denominator = wedge(w2, u2)
         if np.abs(denominator) < tol:
             # lines are parallel, so there are either infinitely many
             # intersections or none at all. If there are infinitely many, then
@@ -148,7 +158,7 @@ class Grid:
                 # negate wedge due to texcoord "y" (actually v) axis being
                 # flipped from the standard cartesian coordinate system
                 ends_inside = (
-                    self._wedge(line_end - line_start, seg_end - line_end) < 0
+                    wedge(line_end - line_start, seg_end - line_end) < 0
                 )
                 if ends_inside:
                     if intersection_point is not None:
@@ -193,19 +203,3 @@ class BoundingBox:
     def __contains__(self, point):
         x, y = point
         return self.x_min <= x <= self.x_max and self.y_min <= y <= self.y_max
-
-    def scaled(self, x_scale, y_scale):
-        return BoundingBox(
-            self.x_min * x_scale,
-            self.x_max * x_scale,
-            self.y_min * y_scale,
-            self.y_max * y_scale,
-        )
-
-    def snapped(self):
-        return BoundingBox(
-            x_min=np.floor(self.x_min),
-            x_max=np.ceil(self.x_max),
-            y_min=np.floor(self.y_min),
-            y_max=np.ceil(self.y_max),
-        )
