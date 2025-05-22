@@ -4,9 +4,7 @@ import mitsuba as mi
 import numpy as np
 
 
-def compute_cell_areas(
-    mesh, grid_rows: int, grid_cols: int, r_tol=1e-2, step=0
-):
+def compute_cell_areas(mesh, grid_rows: int, grid_cols: int, r_tol=1e-2):
     u_int = np.arange(grid_cols, dtype=np.float32)
     v_int = np.arange(grid_rows, dtype=np.float32)
     p0 = np.stack(np.meshgrid(u_int, v_int), 2)
@@ -28,22 +26,28 @@ def compute_cell_areas(
         area = _triangle_area(*[q[..., i, :] for i in tri_idx])
         cell_areas[mask] += area[mask]
 
-    print(f"cell area is {np.sum(cell_areas)}")
-    print(f"mesh area is {_mesh_area(mesh)}")
-
     area_true = _mesh_area(mesh)
     area_approx = np.sum(cell_areas)
     r_err = np.abs(area_true - area_approx) / area_true
-    print(f"relative error is {r_err}")
-    if r_err < r_tol or step > 5:
+    if r_err < r_tol:
         return cell_areas
     else:
         new_res = (2 * grid_rows, 2 * grid_cols)
         print(f"using new resolution of {new_res}")
+        # cap out at around 2 GB memory for one array
+        if 4 * np.prod(new_res) * 15 > 2000000000:
+            print(
+                "Warning: to avoid using excessive amounts of memory, the mesh "
+                "surface area estimation algorithm is terminating early, with "
+                f"a relative error of {r_err} when used to estimate the area "
+                f"of the entire mesh (the target was r_tol = {r_tol}). This "
+                "likely happened because `r_tol` is unreasonably small."
+            )
+            return cell_areas
         # double the grid width and height, replacing each cell with four cells
         # worth of coverage. this decreases the error, but the arrays grow
         # exponentially in size, so need to be cut off eventually
-        cell_areas_hi_res = compute_cell_areas(mesh, *new_res, r_tol, step + 1)
+        cell_areas_hi_res = compute_cell_areas(mesh, *new_res, r_tol)
         c00 = cell_areas_hi_res[0::2, 0::2]
         c10 = cell_areas_hi_res[1::2, 0::2]
         c01 = cell_areas_hi_res[0::2, 1::2]
