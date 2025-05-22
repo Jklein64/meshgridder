@@ -100,7 +100,6 @@ def test_correct_cell_area_sum_np():
     total_surface_area = np.sum(cell_areas)
 
     # compute true area by summing triangle areas
-    print(total_surface_area)
     true_surface_area = 0
     params = mi.traverse(mi_mesh)
     vertices = np.array(params["vertex_positions"]).reshape(-1, 3)

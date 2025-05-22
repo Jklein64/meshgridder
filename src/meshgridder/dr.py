@@ -6,7 +6,7 @@ import drjit as dr
 import mitsuba as mi
 
 mi.set_variant("llvm_ad_rgb")
-from drjit.auto.ad import Float, Int, TensorXf, TensorXu, UInt
+from drjit.auto.ad import Float, TensorXf, TensorXu, UInt
 from mitsuba import Point2f, Point3f
 
 
@@ -14,25 +14,21 @@ def wedge_2d(a: Point2f, b: Point2f):
     return a.x * b.y - a.y * b.x
 
 
-def polygon_area_2d(vertices: Point2f):
+def polygon_area_2d(vertices: list[Point2f]):
     area = 0
     n = len(vertices)
     for i in range(n):
-        a = dr.gather(Point2f, vertices, i)
-        b = dr.gather(Point2f, vertices, (i + 1) % n)
         # https://en.wikipedia.org/wiki/Shoelace_formula#Generalization
-        area += wedge_2d(a, b)
+        area += wedge_2d(vertices[i], vertices[(i + 1) % n])
     return area / 2
 
 
-def polygon_area_3d(vertices: Point3f):
+def polygon_area_3d(vertices: list[Point3f]):
     area = mi.Point3f(0, 0, 0)
     n = len(vertices)
     for i in range(n):
-        a = dr.gather(Point3f, vertices, i)
-        b = dr.gather(Point3f, vertices, (i + 1) % n)
         # https://en.wikipedia.org/wiki/Shoelace_formula#Generalization
-        area += dr.cross(a, b)
+        area += dr.cross(vertices[i], vertices[(i + 1) % n])
     return dr.norm(area) / 2
 
 
@@ -44,17 +40,19 @@ def compute_cell_areas(mesh, grid_rows: int, grid_cols: int):
     # unravel vertices and faces arrays into triangles
     triangles = []
     vertices = dr.reshape(Point2f, mesh_params["vertex_texcoords"], (-1, 2))
-    # drjit implodes if I try to use TensorXf to do this, so numpy it is
-    for face in mesh_params["faces"].numpy().reshape(-1, 3):
-        triangles.append(dr.gather(Point2f, vertices, UInt(face)))
+    for face in dr.reshape(TensorXu, mesh_params["faces"], (-1, 3)):
+        triangle = []
+        for i in face:
+            triangle.append(dr.gather(Point2f, vertices, UInt(i)))
+        triangles.append(triangle)
 
     for triangle in triangles:
         bbox = BoundingBox.from_points(triangle)
         # skip cells outside the triangle's bounding box
-        (row_min,) = Int(dr.floor(bbox.y_min * grid.rows)).numpy()
-        (row_max,) = Int(dr.ceil(bbox.y_max * grid.rows)).numpy()
-        (col_min,) = Int(dr.floor(bbox.x_min * grid.cols)).numpy()
-        (col_max,) = Int(dr.ceil(bbox.x_max * grid.cols)).numpy()
+        row_min = dr.floor(bbox.y_min * grid.rows)
+        row_max = dr.floor(bbox.y_max * grid.rows + 1)
+        col_min = dr.floor(bbox.x_min * grid.cols)
+        col_max = dr.floor(bbox.x_max * grid.cols + 1)
         cell_i = row_min
         while cell_i < row_max:
             # for cell_i in range(row_min, row_max):
@@ -98,6 +96,10 @@ def _nudge(mesh, coords, mask):
 
 
 def _point_list_to_nested_array(points: list[Point2f]):
+    # return None
+    print(points)
+    print(points[0])
+    print(points[0].x)
     return mi.Point2f([p.x for p in points], [p.y for p in points])
 
 
@@ -115,19 +117,14 @@ class Grid:
         self.cols = cols
         self.spacing = mi.Point2f(1 / self.cols, 1 / self.rows)
 
-    def clip_to_cell(self, vertices: Point2f, cell_i, cell_j):
-        corners = self.spacing * Point2f(
-            # cell corners CCW from top left
-            [cell_j, cell_j, cell_j + 1, cell_j + 1],
-            [cell_i, cell_i + 1, cell_i + 1, cell_i],
-        )
-        # corners = [
-        #     # get cell corners CCW from top left
-        #     self.spacing * mi.Point2f(cell_j, cell_i),
-        #     self.spacing * mi.Point2f(cell_j, cell_i + 1),
-        #     self.spacing * mi.Point2f(cell_j + 1, cell_i + 1),
-        #     self.spacing * mi.Point2f(cell_j + 1, cell_i),
-        # ]
+    def clip_to_cell(self, vertices: list[Point2f], cell_i, cell_j):
+        corners = [
+            # get cell corners CCW from top left
+            self.spacing * mi.Point2f(cell_j, cell_i),
+            self.spacing * mi.Point2f(cell_j, cell_i + 1),
+            self.spacing * mi.Point2f(cell_j + 1, cell_i + 1),
+            self.spacing * mi.Point2f(cell_j + 1, cell_i),
+        ]
         cell_bbox = BoundingBox.from_points(corners)
 
         # apply sutherland hodgman algorithm
@@ -160,12 +157,9 @@ class Grid:
         return vertices
 
     def _vertices_to_edges(self, vertices):
-        _, n = dr.shape(vertices)
+        n = len(vertices)
         for i in range(n):
-            yield (
-                dr.gather(Point2f, vertices, i),
-                dr.gather(Point2f, vertices, (i + 1) % n),
-            )
+            yield vertices[i], vertices[(i + 1) % n]
 
     def _intersect(
         self,
@@ -191,7 +185,6 @@ class Grid:
             if t < 0 or t > 1:
                 return None
             else:
-                print("banana")
                 return w1 + t * w2
 
 
@@ -205,12 +198,22 @@ class BoundingBox:
         self.height = y_max - y_min
 
     @staticmethod
-    def from_points(points: Point2f):
+    def from_points(points: list[Point2f]):
+        x_min, y_min = float("inf"), float("inf")
+        x_max, y_max = -float("inf"), -float("inf")
+        for point in points:
+            if point.x < x_min:
+                x_min = point.x
+            elif point.x > x_max:
+                x_max = point.x
+
+            if point.y < y_min:
+                y_min = point.y
+            elif point.y > y_max:
+                y_max = point.y
+
         return BoundingBox(
-            x_min=dr.min(points.x),
-            x_max=dr.max(points.x),
-            y_min=dr.min(points.y),
-            y_max=dr.max(points.y),
+            Float(x_min), Float(x_max), Float(y_min), Float(y_max)
         )
 
     def __contains__(self, point: Point2f):
