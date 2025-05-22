@@ -58,37 +58,35 @@ def compute_cell_areas(mesh, grid_rows: int, grid_cols: int) -> np.ndarray:
 
     # get texcoords and connectivity
     mesh_params = mi.traverse(mesh)
-    uv_vertices = mesh_params["vertex_texcoords"].numpy().reshape(-1, 2)
+    vertices = mesh_params["vertex_texcoords"].numpy().reshape(-1, 2)
     faces = mesh_params["faces"].numpy().reshape(-1, 3)
 
-    for tri_vertices in uv_vertices[faces]:
-        bbox_uv = BoundingBox.from_points(tri_vertices)
+    for triangle in vertices[faces]:
+        bbox = BoundingBox.from_points(triangle)
         # skip cells outside the triangle's bounding box
-        row_min = int(bbox_uv.y_min * grid.rows)
-        row_max = int(bbox_uv.y_max * grid.rows) + 1
-        col_min = int(bbox_uv.x_min * grid.cols)
-        col_max = int(bbox_uv.x_max * grid.cols) + 1
+        row_min = int(np.floor(bbox.y_min * grid.rows))
+        row_max = int(np.ceil(bbox.y_max * grid.rows))
+        col_min = int(np.floor(bbox.x_min * grid.cols))
+        col_max = int(np.ceil(bbox.x_max * grid.cols))
         for cell_i in range(row_min, row_max):
             for cell_j in range(col_min, col_max):
-
                 # intersection polygon vertices in uv space
-                int_uvs = grid.clip_to_cell(tri_vertices, cell_i, cell_j)
-                if len(int_uvs) < 3:
+                p_uv = grid.clip_to_cell(triangle, cell_i, cell_j)
+                if len(p_uv) < 3:
                     continue
-
                 # attempt to map back to xyz space
-                si = mesh.eval_parameterization(mi.Point2f(int_uvs.T))
+                si = mesh.eval_parameterization(mi.Point2f(p_uv.T))
                 mask = dr.isinf(si.t)
                 # nudge until all t are finite
                 if dr.any(mask):
-                    int_uvs = dr.auto.ad.Array2f(int_uvs.T)
+                    p_uv = dr.auto.ad.Array2f(p_uv.T)
                     # intersection polygon vertices in xyz space
-                    int_xyz = _nudge(mesh, int_uvs, mask).numpy().T
+                    p_xyz = _nudge(mesh, p_uv, mask).numpy().T
                 else:
                     # intersection polygon vertices in xyz space
-                    int_xyz = si.p.numpy().T
+                    p_xyz = si.p.numpy().T
 
-                cell_areas[cell_i, cell_j] += polygon_area(int_xyz, dim="3d")
+                cell_areas[cell_i, cell_j] += polygon_area(p_xyz, dim="3d")
     return cell_areas
 
 
