@@ -1,5 +1,5 @@
 """
-Utility functions shared across tests and benchmarks.
+Common utility functions shared among tests.
 """
 
 import drjit as dr
