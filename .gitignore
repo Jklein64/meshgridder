@@ -10,4 +10,4 @@ venv
 *.egg-info
 
 # profiles
-test/profiles
+out
