@@ -14,11 +14,10 @@ mi.set_variant("llvm_ad_rgb")
 
 
 def test_random_samples():
-    rng = np.random.default_rng()
     grid_rows = 3
     grid_cols = 5
     samples_per_cell = 4
-    samples = _generate_samples(rng, grid_rows, grid_cols, samples_per_cell)
+    samples = _generate_samples(grid_rows, grid_cols, samples_per_cell)
     for cell_i in range(grid_rows):
         for cell_j in range(grid_cols):
             cell_u_start = cell_j / grid_cols
