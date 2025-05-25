@@ -7,26 +7,23 @@ import mitsuba as mi
 import numpy as np
 
 
-def compute_cell_areas(
-    mesh, grid_rows: int, grid_cols: int, samples_per_cell, r_tol=1e-5, rng=None
-):
-    if rng is None:
-        rng = np.random.default_rng()
-
-    samples = _generate_samples(rng, grid_rows, grid_cols, samples_per_cell)
+def compute_cell_areas(mesh, grid_rows, grid_cols, samples_per_cell, rng=None):
+    samples = _generate_samples(grid_rows, grid_cols, samples_per_cell, rng)
     n = _query(mesh, samples)
     # up vector
     n0 = np.array([0, 0, 1])
     # calculate scaling factors
-    scaling_factor = samples_per_cell / np.sum(np.dot(n, n0), axis=2)
-    return scaling_factor
+    scaling_factors = 1 / np.dot(n, n0)
+    return np.nansum(scaling_factors, axis=2) / samples_per_cell
 
 
-def _generate_samples(rng, grid_rows, grid_cols, samples_per_cell=1):
+def _generate_samples(grid_rows, grid_cols, samples_per_cell=1, rng=None):
     """
-    Performs stratified sampling of the unit box with the given number of rows
-    and columns and samples per grid cell.
+    Performs stratified sampling of the unit box with the given number of rows,
+    columns, and samples per grid cell.
     """
+    if rng is None:
+        rng = np.random.default_rng()
     # find the center of each grid cell
     center_u = (np.arange(0, grid_cols) + 0.5) / grid_cols
     center_v = (np.arange(0, grid_rows) + 0.5) / grid_rows

@@ -34,7 +34,9 @@ def test_random_samples():
 def test_correct_cell_area_sum():
     # create a random mesh
     mi_mesh = random_mi_mesh()
-    cell_areas = compute_cell_areas(mi_mesh, grid_rows=100, grid_cols=100)
+    cell_areas = compute_cell_areas(
+        mi_mesh, grid_rows=100, grid_cols=100, samples_per_cell=64
+    )
     total_surface_area = np.sum(cell_areas)
 
     # compute true area by summing triangle areas
