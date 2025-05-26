@@ -10,7 +10,7 @@ from time import perf_counter
 import mitsuba as mi
 from common import random_mi_mesh
 
-from meshgridder.np import compute_cell_areas
+from meshgridder.sh import compute_cell_areas
 
 mi.set_variant("llvm_ad_rgb")
 

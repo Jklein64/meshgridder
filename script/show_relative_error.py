@@ -12,7 +12,7 @@ import numpy as np
 from common import random_mi_mesh
 
 from meshgridder.mc import compute_cell_areas as compute_cell_areas_mc
-from meshgridder.np import compute_cell_areas as compute_cell_areas_np
+from meshgridder.sh import compute_cell_areas as compute_cell_areas_sh
 
 mi.set_variant("llvm_ad_rgb")
 
@@ -21,7 +21,7 @@ def main(rows, cols, rtol=1e-3):
     mesh = random_mi_mesh(grid_size=(4, 8))
     data = np.ma.array(np.zeros(shape=(rows, cols), dtype=int), mask=True)
     samples_per_cell = 1
-    areas_true = compute_cell_areas_np(mesh, rows, cols)
+    areas_true = compute_cell_areas_sh(mesh, rows, cols)
     rel_err = np.ones(shape=(rows, cols))
 
     count = 0

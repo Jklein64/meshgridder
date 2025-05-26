@@ -4,29 +4,26 @@ Computes cell areas for a random mesh to simulate a typical workload.
 
 from argparse import ArgumentParser
 from sys import argv
-from typing import Literal
 
 import mitsuba as mi
 import numpy as np
 from common import random_mi_mesh
 
-from meshgridder.np import compute_cell_areas as compute_cell_areas_np
+from meshgridder.sh import compute_cell_areas as compute_cell_areas_sh
 from meshgridder.tri import compute_cell_areas as compute_cell_areas_tri
 
 mi.set_variant("llvm_ad_rgb")
 
 
-def compute_cell_areas(
-    mesh, grid_rows, grid_cols, method: Literal["np"] | Literal["tri"]
-):
+def compute_cell_areas(mesh, grid_rows, grid_cols, method):
     match method:
-        case "np":
-            return compute_cell_areas_np(mesh, grid_rows, grid_cols)
+        case "sh":
+            return compute_cell_areas_sh(mesh, grid_rows, grid_cols)
         case "tri":
             return compute_cell_areas_tri(mesh, grid_rows, grid_cols)
 
 
-def main(grid_rows, grid_cols, method: Literal["np"] | Literal["tri"]):
+def main(grid_rows, grid_cols, method):
     mesh = random_mi_mesh(grid_size=(8, 6))
     cell_areas = compute_cell_areas(mesh, grid_rows, grid_cols, method)
     print(np.sum(cell_areas))

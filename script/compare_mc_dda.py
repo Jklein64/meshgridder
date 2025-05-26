@@ -10,7 +10,7 @@ from scipy.stats import ecdf
 
 from meshgridder.dda import compute_cell_areas as compute_cell_areas_dda
 from meshgridder.mc import compute_cell_areas as compute_cell_areas_mc
-from meshgridder.np import compute_cell_areas as compute_cell_areas_np
+from meshgridder.sh import compute_cell_areas as compute_cell_areas_sh
 
 mi.set_variant("llvm_ad_rgb")
 
@@ -83,7 +83,7 @@ def main(rows, cols):
         # )
         print("computing reference cell areas...")
         start = perf_counter()
-        ref = compute_cell_areas_np(mesh, rows, cols)
+        ref = compute_cell_areas_sh(mesh, rows, cols)
         stop = perf_counter()
         print(f"done! took {stop - start} seconds.")
         np.save(ref_filename, ref)

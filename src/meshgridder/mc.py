@@ -6,7 +6,7 @@ import drjit as dr
 import mitsuba as mi
 import numpy as np
 
-from meshgridder.np import BoundingBox
+from meshgridder.sh import BoundingBox
 
 
 def compute_cell_areas(

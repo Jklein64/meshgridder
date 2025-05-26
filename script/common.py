@@ -7,7 +7,7 @@ import mitsuba as mi
 import numpy as np
 from scipy.spatial import Delaunay
 
-from meshgridder.np import BoundingBox
+from meshgridder.sh import BoundingBox
 
 
 # TODO allow this to take a "triangle to grid cell area ratio" as input

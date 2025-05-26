@@ -8,7 +8,7 @@ from common import random_mi_mesh
 from pytest import approx
 
 from meshgridder.mc import _generate_samples, compute_cell_areas
-from meshgridder.np import compute_cell_areas as compute_cell_areas_np
+from meshgridder.sh import compute_cell_areas as compute_cell_areas_sh
 
 mi.set_variant("llvm_ad_rgb")
 
@@ -41,7 +41,7 @@ def test_relatively_correct_cell_area_sum():
         grid_cols=grid_cols,
     )
 
-    cell_areas_np = compute_cell_areas_np(mesh, grid_rows, grid_cols)
+    cell_areas_np = compute_cell_areas_sh(mesh, grid_rows, grid_cols)
     # ignore outliers 0.o
     abs_err = np.abs(cell_areas - cell_areas_np)
     assert np.quantile(abs_err, 0.97) < 1e-3

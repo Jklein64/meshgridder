@@ -30,7 +30,7 @@ def test_dda_similar_to_mc():
         mesh,
         grid_rows,
         grid_cols,
-        samples_per_cell=int(total_samples / (grid_rows * grid_cols)),
+        samples=total_samples,
     )
 
     assert np.sum(cell_areas_dda) == approx(np.sum(cell_areas_mc))

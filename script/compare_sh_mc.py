@@ -12,7 +12,7 @@ import numpy as np
 from common import random_mi_mesh
 
 from meshgridder.mc import compute_cell_areas
-from meshgridder.np import compute_cell_areas as compute_cell_areas_np
+from meshgridder.sh import compute_cell_areas as compute_cell_areas_sh
 
 mi.set_variant("llvm_ad_rgb")
 
@@ -21,7 +21,7 @@ samples_per_cell = 1024
 filename = "out/np_vs_mc.npz"
 if os.path.exists(filename):
     data = np.load(filename)
-    areas_np = data["np"]
+    areas_sh = data["sh"]
     areas_mc = data["mc"]
 else:
     # create a random mesh
@@ -40,36 +40,36 @@ else:
     print(f"time (mc): {stop - start} seconds")
 
     start = perf_counter()
-    areas_np = compute_cell_areas_np(mi_mesh, grid_rows=100, grid_cols=100)
+    areas_sh = compute_cell_areas_sh(mi_mesh, grid_rows=100, grid_cols=100)
     stop = perf_counter()
     print(f"time (np): {stop - start} seconds")
 
-    np.savez(filename, mc=areas_mc, np=areas_np)
+    np.savez(filename, mc=areas_mc, np=areas_sh)
 
 norm = mpl.colors.Normalize(
-    vmin=min(np.min(areas_np), np.min(areas_mc)),
-    vmax=max(np.max(areas_np), np.max(areas_mc)),
+    vmin=min(np.min(areas_sh), np.min(areas_mc)),
+    vmax=max(np.max(areas_sh), np.max(areas_mc)),
 )
 
-err_abs = np.abs(areas_np - areas_mc)
+err_abs = np.abs(areas_sh - areas_mc)
 print(f"Min absolute error: {np.min(err_abs)}")
 print(f"Max absolute error: {np.max(err_abs)}")
 print(f"Mean absolute error: {np.mean(err_abs)}")
 print(f"Median absolute error: {np.median(err_abs)}")
-err_rel = err_abs / np.abs(areas_np)
+err_rel = err_abs / np.abs(areas_sh)
 print(f"Min relative error: {np.nanmin(err_rel)}")
 print(f"Max relative error: {np.nanmax(err_rel)}")
 print(f"Mean relative error: {np.nanmean(err_rel)}")
 print(f"Median relative error: {np.nanmedian(err_rel)}")
 
 fig, axs = plt.subplots(ncols=3)
-axs[0].pcolormesh(areas_np, norm=norm)
+axs[0].pcolormesh(areas_sh, norm=norm)
 axs[0].yaxis.set_inverted(True)
-axs[0].set_title("np method")
+axs[0].set_title("sh method")
 axs[1].pcolormesh(areas_mc, norm=norm)
 axs[1].yaxis.set_inverted(True)
 axs[1].set_title(f"mc method ({samples_per_cell} samples/cell)")
-tmp = axs[2].pcolormesh(np.abs(areas_np - areas_mc))
+tmp = axs[2].pcolormesh(np.abs(areas_sh - areas_mc))
 axs[2].yaxis.set_inverted(True)
 axs[2].set_title("absolute error")
 plt.colorbar(tmp)

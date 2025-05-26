@@ -7,8 +7,8 @@ import numpy as np
 from common import random_mi_mesh
 from pytest import approx
 
-from meshgridder.np import compute_cell_areas as compute_cell_areas_np
-from meshgridder.np import polygon_area
+from meshgridder.sh import compute_cell_areas as compute_cell_areas_sh
+from meshgridder.sh import polygon_area
 from meshgridder.tri import compute_cell_areas
 
 mi.set_variant("llvm_ad_rgb")
@@ -37,7 +37,7 @@ def test_np_tri_compute_same_values():
     mi_mesh = random_mi_mesh()
     # 100x100 is the largest test with a reasonable time for the np method
     grid_size = (100, 100)
-    cell_areas_np = compute_cell_areas_np(mi_mesh, *grid_size)
+    cell_areas_np = compute_cell_areas_sh(mi_mesh, *grid_size)
     cell_areas_tri = compute_cell_areas(mi_mesh, *grid_size, r_tol=1e-2)
 
     # the sums should be similar
