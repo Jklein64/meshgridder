@@ -10,4 +10,5 @@ venv
 *.egg-info
 
 # profiles
-out
+out/*
+!out/.gitkeep
