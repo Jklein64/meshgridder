@@ -41,7 +41,7 @@ def random_mi_mesh(size=(6, 7), grid_size=(8, 12), offset=(1, 2)):
     )
 
     # create vertical offsets
-    vertices_z = np.random.rand(*vertices_xy.shape[:2])
+    vertices_z = 0.1 * max(size) * np.random.rand(*vertices_xy.shape[:2])
     vertices = np.stack(
         [*(vertices_xy + jitters).transpose(2, 0, 1), vertices_z], axis=-1
     )

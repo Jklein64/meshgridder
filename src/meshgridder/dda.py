@@ -9,7 +9,11 @@ import numpy as np
 
 
 def compute_cell_areas(
-    mesh, grid_rows, grid_cols, samples=1000000, rng=np.random.default_rng()
+    mesh,
+    grid_rows,
+    grid_cols,
+    samples=1000000,
+    rng=np.random.default_rng(),
 ):
     params = mi.traverse(mesh)
     vertices = params["vertex_positions"].numpy().reshape(-1, 3)
@@ -30,11 +34,11 @@ def compute_cell_areas(
     edges[edges >= 1] = 1 - np.finfo(np.float32).eps
     edges[..., 0] *= grid.cols
     edges[..., 1] *= grid.rows
-    weights = np.square(grid.dda(edges) + 1)
+    weights = 100 * grid.dda(edges) + 1
 
     # distribute samples based on how badly the cell needs it
     cell_samples = (samples / np.sum(weights) * weights).astype(int)
-    cell_areas = np.zeros(shape=(grid.rows, grid.cols))
+    scaling_factors = np.zeros(shape=(grid.rows, grid.cols))
     for i in range(grid.rows):
         for j in range(grid.cols):
             uvs = grid.sample(i, j, cell_samples[i, j], rng)
@@ -44,9 +48,10 @@ def compute_cell_areas(
             # compute scaling factor
             f = 1 / np.dot(n, n0)
             f = np.nansum(f, axis=0) / cell_samples[i, j]
-            cell_areas[i, j] = f
-    ratio = mesh_area / np.sum(cell_areas)
-    return cell_areas * ratio
+            scaling_factors[i, j] = f
+    ratio = mesh_area / np.sum(scaling_factors)
+    cell_areas = scaling_factors * ratio
+    return cell_areas
 
 
 def _triangle_area(vertices):

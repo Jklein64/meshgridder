@@ -8,7 +8,11 @@ import numpy as np
 
 
 def compute_cell_areas(
-    mesh, grid_rows, grid_cols, samples_per_cell=None, rng=None
+    mesh,
+    grid_rows,
+    grid_cols,
+    samples_per_cell=None,
+    rng=None,
 ):
     if samples_per_cell is None:
         samples_per_cell = int(1000000 / (grid_rows * grid_cols))
