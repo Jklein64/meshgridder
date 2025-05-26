@@ -2,11 +2,11 @@ import os
 from time import perf_counter
 
 import drjit as dr
-import matplotlib as mpl
 import matplotlib.pyplot as plt
 import mitsuba as mi
 import numpy as np
 from common import random_mi_mesh
+from scipy.stats import ecdf
 
 from meshgridder.dda import compute_cell_areas as compute_cell_areas_dda
 from meshgridder.mc import compute_cell_areas as compute_cell_areas_mc
@@ -17,27 +17,20 @@ mi.set_variant("llvm_ad_rgb")
 
 def experiment(mesh, grid_rows, grid_cols, cell_areas_ref):
     mc_start = perf_counter()
-    cell_areas_mc = compute_cell_areas_mc(mesh, grid_rows, grid_cols)
+    cell_areas_mc = compute_cell_areas_mc(
+        mesh, grid_rows, grid_cols, samples=10_000_000
+    )
     mc_stop = perf_counter()
-    print(f"mc runtime: {mc_stop - mc_start}")
-    mc_r_start = perf_counter()
-    cell_areas_mc_r = compute_cell_areas_mc(
-        mesh, grid_rows, grid_cols, refine=True
-    )
-    mc_r_stop = perf_counter()
-    print(f"mc with refinement runtime: {mc_r_stop - mc_r_start}")
+    print(f"mc runtime:\t{mc_stop - mc_start}")
 
+    mc_rel_err = np.abs(cell_areas_mc - cell_areas_ref) / cell_areas_ref
     fig, axs = plt.subplots(ncols=2)
-    mc_abs_err = np.abs(cell_areas_mc - cell_areas_ref) / cell_areas_ref
-    mc_r_abs_err = np.abs(cell_areas_mc_r - cell_areas_ref) / cell_areas_ref
-    mask = ~np.isnan(mc_abs_err)
-    axs[0].imshow(mc_abs_err, vmin=0, vmax=np.quantile(mc_abs_err[mask], 0.95))
+    plt.colorbar(axs[0].imshow(mc_rel_err, norm="log"))
     axs[0].set_title("mc relative error (with np as reference)")
-    mask = ~np.isnan(mc_r_abs_err)
-    axs[1].imshow(
-        mc_r_abs_err, vmin=0, vmax=np.quantile(mc_r_abs_err[mask], 0.95)
-    )
-    plt.tight_layout()
+    res = ecdf(mc_rel_err[~np.isnan(mc_rel_err)])
+    res.cdf.plot(ax=axs[1])
+    axs[1].set(xlabel="relative error", title="relative error CDF")
+    axs[1].set_xscale("log")
     plt.show()
 
 

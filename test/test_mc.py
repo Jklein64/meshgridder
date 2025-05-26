@@ -5,7 +5,6 @@ Tests for the area computation method based on Monte-Carlo methods.
 import mitsuba as mi
 import numpy as np
 from common import random_mi_mesh
-from pytest import approx
 
 from meshgridder.mc import _generate_samples, compute_cell_areas
 from meshgridder.np import compute_cell_areas as compute_cell_areas_np
