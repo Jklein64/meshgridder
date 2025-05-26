@@ -74,3 +74,18 @@ def random_mi_mesh(size=(6, 7), grid_size=(8, 12), offset=(1, 2)):
     params["faces"] = dr.auto.UInt(dr.ravel(faces_dr))
 
     return mi_mesh
+
+
+def compute_mesh_area(mesh):
+    params = mi.traverse(mesh)
+    vertices = params["vertex_positions"].numpy().reshape(-1, 3)
+    faces = params["faces"].numpy().reshape(-1, 3)
+    area = 0.0
+    for tri in vertices[faces]:
+        area += triangle_area(tri)
+    return area
+
+
+def triangle_area(vertices):
+    v0, v1, v2 = vertices
+    return 1 / 2 * np.linalg.norm(np.cross(v1 - v0, v2 - v0))

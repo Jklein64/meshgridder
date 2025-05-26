@@ -6,12 +6,14 @@ import drjit as dr
 import mitsuba as mi
 import numpy as np
 
+from meshgridder.np import BoundingBox
+
 
 def compute_cell_areas(
     mesh,
     grid_rows,
     grid_cols,
-    samples=1000000,
+    samples=1_000_000,
     rng=np.random.default_rng(),
 ):
     samples_per_cell = int(samples / (grid_rows * grid_cols))
@@ -25,16 +27,12 @@ def compute_cell_areas(
 
     params = mi.traverse(mesh)
     vertices = params["vertex_positions"].numpy().reshape(-1, 3)
-    faces = params["faces"].numpy().reshape(-1, 3)
-    mesh_area = sum(_triangle_area(tri) for tri in vertices[faces])
-    ratio = mesh_area / np.nansum(f_mean)
-    cell_areas = ratio * f_mean
+    bbox = BoundingBox.from_points(vertices)
+    # assumes that the assignment of texcoords is based on where vertices
+    # end up relative to the bounding box of the mesh in the XY plane
+    cell_area = (bbox.width / grid_cols) * (bbox.height / grid_rows)
+    cell_areas = cell_area * f_mean
     return cell_areas
-
-
-def _triangle_area(vertices):
-    v0, v1, v2 = vertices
-    return 1 / 2 * np.linalg.norm(np.cross(v1 - v0, v2 - v0))
 
 
 def _generate_samples(
