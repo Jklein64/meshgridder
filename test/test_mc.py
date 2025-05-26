@@ -39,7 +39,6 @@ def test_relatively_correct_cell_area_sum():
         mesh,
         grid_rows=grid_rows,
         grid_cols=grid_cols,
-        samples_per_cell=64,
     )
 
     cell_areas_np = compute_cell_areas_np(mesh, grid_rows, grid_cols)
