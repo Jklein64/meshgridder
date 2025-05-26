@@ -46,10 +46,6 @@ else:
 
     np.savez(filename, mc=areas_mc, np=areas_np)
 
-# areas_mc[np.isnan(areas_mc)] = 0
-ratio = np.sum(areas_np) / np.nansum(areas_mc)
-areas_mc *= ratio
-
 norm = mpl.colors.Normalize(
     vmin=min(np.min(areas_np), np.min(areas_mc)),
     vmax=max(np.max(areas_np), np.max(areas_mc)),

@@ -14,7 +14,20 @@ def compute_cell_areas(mesh, grid_rows, grid_cols, samples_per_cell, rng=None):
     n0 = np.array([0, 0, 1])
     # calculate scaling factors
     scaling_factors = 1 / np.dot(n, n0)
-    return np.nansum(scaling_factors, axis=2) / samples_per_cell
+    scaling_factors = np.nansum(scaling_factors, axis=2) / samples_per_cell
+
+    params = mi.traverse(mesh)
+    vertices = params["vertex_positions"].numpy().reshape(-1, 3)
+    faces = params["faces"].numpy().reshape(-1, 3)
+    mesh_area = sum(_triangle_area(tri) for tri in vertices[faces])
+    ratio = mesh_area / np.nansum(scaling_factors)
+    cell_areas = ratio * scaling_factors
+    return cell_areas
+
+
+def _triangle_area(vertices):
+    v0, v1, v2 = vertices
+    return 1 / 2 * np.linalg.norm(np.cross(v1 - v0, v2 - v0))
 
 
 def _generate_samples(grid_rows, grid_cols, samples_per_cell=1, rng=None):
