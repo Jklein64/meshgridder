@@ -4,10 +4,7 @@ DDA on the mesh edges to decide where to put more samples.
 """
 
 import drjit as dr
-import mitsuba as mi
 import numpy as np
-
-mi.set_variant("llvm_ad_rgb")
 from mitsuba import Point2f, Point2i
 
 
@@ -64,44 +61,21 @@ class Grid:
                 step.y = 1
                 ray_length.y = (map_check.y + 1 - ray_start.y) * ray_step_size.y
             while True:
-                count[map_check.y, map_check.x] += 1
-                if ray_length.x < ray_length.y:
-                    map_check.x += step.x
-                    ray_length.x += ray_step_size.x
-                else:
-                    map_check.y += step.y
-                    ray_length.y += ray_step_size.y
                 if map_check.x == x1 and map_check.y == y1:
                     count[map_check.y, map_check.x] += 1
                     break
+                elif (
+                    0 <= map_check.x < self.cols
+                    and 0 <= map_check.y < self.rows
+                ):
+                    count[map_check.y, map_check.x] += 1
+                    if ray_length.x < ray_length.y:
+                        map_check.x += step.x
+                        ray_length.x += ray_step_size.x
+                    else:
+                        map_check.y += step.y
+                        ray_length.y += ray_step_size.y
+                else:
+                    break
 
         return count
-
-
-if __name__ == "__main__":
-    lines = np.array([[[1.5, 0.5], [3.9, 8.9]], [[3.2, 4.4], [1.1, 6.4]]])
-    grid = Grid(10, 10)
-    counts = grid.dda(lines)
-    print(counts)
-    import matplotlib.pyplot as plt
-
-    plt.pcolormesh(counts)
-    plt.xticks(np.arange(10))
-    plt.yticks(np.arange(10))
-    plt.grid()
-    plt.gca().yaxis.set_inverted(True)
-    for i in range(lines.shape[0]):
-        plt.plot(lines[i, :, 0], lines[i, :, 1], marker="o")
-    plt.show()
-
-    # xticks = np.arange(11)
-    # yticks = np.arange(11)
-    # plt.pcolormesh(xticks, yticks, counts)
-    # plt.imshow(counts)
-    # plt.xticks(np.arange(10) + 0.5)
-    # plt.yticks(np.arange(10) + 0.5)
-    # plt.grid()
-    # # plt.plot(*lines[0][0], marker=".")
-    # # plt.plot(*lines[0][1], marker=".")
-    # plt.plot(lines[0, :, 1], lines[0, :, 0])
-    # plt.show()
