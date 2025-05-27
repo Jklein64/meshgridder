@@ -52,11 +52,13 @@ def test_correct_area_sum():
     mesh = random_mi_mesh()
     grid_rows = 150
     grid_cols = 200
-    cell_areas = compute_cell_areas(mesh, grid_rows, grid_cols, samples=100_000)
+    cell_areas = compute_cell_areas(
+        mesh, grid_rows, grid_cols, samples=10_000_000
+    )
     mesh_area = np.sum(cell_areas)
     mesh_area_ref = _mesh_area(mesh)
-    # this relative error is not good...
-    assert mesh_area == approx(mesh_area_ref, rel=0.01)
+    # this relative error is not great
+    assert mesh_area == approx(mesh_area_ref, rel=1e-3)
 
 
 def _mesh_area(mesh):
