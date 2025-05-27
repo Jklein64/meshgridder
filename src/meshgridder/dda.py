@@ -7,6 +7,8 @@ import drjit as dr
 import mitsuba as mi
 import numpy as np
 
+from meshgridder.sh import BoundingBox
+
 
 def compute_cell_areas(
     mesh,
@@ -21,10 +23,8 @@ def compute_cell_areas(
     faces = params["faces"].numpy().reshape(-1, 3)
     n0 = np.array([0, 0, 1])
 
-    mesh_area = 0.0
     unique_edge_idx = set()
     for i1, i2, i3 in faces:
-        mesh_area += _triangle_area(vertices[[i1, i2, i3]])
         for e1, e2 in [(i1, i2), (i2, i3), (i3, i1)]:
             # sort indices to make the set order independent
             unique_edge_idx.add((e1, e2) if e1 > e2 else (e2, e1))
@@ -34,10 +34,14 @@ def compute_cell_areas(
     edges[edges >= 1] = 1 - np.finfo(np.float32).eps
     edges[..., 0] *= grid.cols
     edges[..., 1] *= grid.rows
-    weights = 100 * grid.dda(edges) + 1
+    dda = grid.dda(edges)
+    weights = 100 * dda
+    zero_cells = np.count_nonzero(dda == 0)
 
     # distribute samples based on how badly the cell needs it
-    cell_samples = (samples / np.sum(weights) * weights).astype(int)
+    cell_samples = (samples - zero_cells) * weights / np.sum(weights)
+    cell_samples = np.maximum(1, cell_samples)
+    cell_samples = cell_samples.astype(int)
     scaling_factors = np.zeros(shape=(grid.rows, grid.cols))
     for i in range(grid.rows):
         for j in range(grid.cols):
@@ -49,14 +53,10 @@ def compute_cell_areas(
             f = 1 / np.dot(n, n0)
             f = np.nansum(f, axis=0) / cell_samples[i, j]
             scaling_factors[i, j] = f
-    ratio = mesh_area / np.sum(scaling_factors)
-    cell_areas = scaling_factors * ratio
+    bbox = BoundingBox.from_points(vertices)
+    cell_area_flat = (bbox.width / grid_cols) * (bbox.height / grid_rows)
+    cell_areas = scaling_factors * cell_area_flat
     return cell_areas
-
-
-def _triangle_area(vertices):
-    v0, v1, v2 = vertices
-    return 1 / 2 * np.linalg.norm(np.cross(v1 - v0, v2 - v0))
 
 
 class Grid:
@@ -82,7 +82,7 @@ class Grid:
         Uses the DDA algorithm to find the number of lines that each cell
         contains. Expects lines to be given as an array with shape (n, 2, 2).
         """
-        count = np.zeros(shape=(self.rows, self.cols))
+        count = np.zeros(shape=(self.rows, self.cols), dtype=int)
 
         for (x0, y0), (x1, y1) in lines:
             ray_start = mi.Point2f(float(x0), float(y0))

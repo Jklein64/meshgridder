@@ -2,6 +2,7 @@ import os
 from time import perf_counter
 
 import drjit as dr
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import mitsuba as mi
 import numpy as np
@@ -16,22 +17,75 @@ mi.set_variant("llvm_ad_rgb")
 
 
 def experiment(mesh, grid_rows, grid_cols, cell_areas_ref):
-    mc_start = perf_counter()
+    start = perf_counter()
+    cell_areas_dda = compute_cell_areas_dda(
+        mesh, grid_rows, grid_cols, samples=10_000_000
+    )
+    stop = perf_counter()
+    print(f"dda runtime: {stop - start}")
+
+    start = perf_counter()
     cell_areas_mc = compute_cell_areas_mc(
         mesh, grid_rows, grid_cols, samples=10_000_000
     )
-    mc_stop = perf_counter()
-    print(f"mc runtime:\t{mc_stop - mc_start}")
+    stop = perf_counter()
+    print(f"mc runtime: {stop - start}")
 
-    mc_rel_err = np.abs(cell_areas_mc - cell_areas_ref) / cell_areas_ref
-    fig, axs = plt.subplots(ncols=2)
-    plt.colorbar(axs[0].imshow(mc_rel_err, norm="log"))
-    axs[0].set_title("mc relative error (with np as reference)")
-    res = ecdf(mc_rel_err[~np.isnan(mc_rel_err)])
-    res.cdf.plot(ax=axs[1])
-    axs[1].set(xlabel="relative error", title="relative error CDF")
-    axs[1].set_xscale("log")
+    fig = plt.figure(1)
+    axs = [fig.add_subplot(1, 3, k) for k in [1, 2, 3]]
+    norm = mpl.colors.Normalize(
+        vmin=np.min([cell_areas_mc, cell_areas_dda, cell_areas_ref]),
+        vmax=np.max([cell_areas_mc, cell_areas_dda, cell_areas_ref]),
+    )
+    axs[0].imshow(cell_areas_mc, norm=norm)
+    axs[1].imshow(cell_areas_dda, norm=norm)
+    axs[2].imshow(cell_areas_ref, norm=norm)
+    for ax in axs:
+        ax.xaxis.set_visible(False)
+        ax.yaxis.set_visible(False)
+    axs[0].set_title("Monte Carlo cell areas")
+    axs[1].set_title("DDA cell areas")
+    axs[2].set_title("reference")
+
+    fig = plt.figure(2)
+    axs = [fig.add_subplot(1, 2, k) for k in [1, 2]]
+    err_mc = np.abs(cell_areas_mc - cell_areas_ref) / cell_areas_ref
+    err_dda = np.abs(cell_areas_dda - cell_areas_ref) / cell_areas_ref
+    errs = [err_mc, err_dda]
+    norm = mpl.colors.Normalize(np.nanmin(errs), np.nanmax(errs))
+    print(norm.vmin, norm.vmax)
+    axs[0].imshow(err_mc, norm=norm)
+    axs[1].imshow(err_dda, norm=norm)
+    for ax in axs:
+        ax.xaxis.set_visible(False)
+        ax.yaxis.set_visible(False)
+    axs[0].set_title("Monte Carlo relative error")
+    axs[1].set_title("DDA relative error")
+    fig.colorbar(mpl.cm.ScalarMappable(norm), ax=axs)
+
+    fig = plt.figure(3)
+    ax = fig.add_subplot()
+    ecdf_mc = ecdf(np.ravel(err_mc[np.isfinite(err_mc)])).cdf
+    ecdf_dda = ecdf(np.ravel(err_dda[np.isfinite(err_dda)])).cdf
+    ecdf_mc.plot(ax, label="mc")
+    ecdf_dda.plot(ax, label="dda")
+    ax.set_title("Relative error eCDFs")
+    ax.set_xlabel("relative error")
+    ax.set_xscale("log")
+    ax.legend()
+    fig.tight_layout()
+
     plt.show()
+
+    # mc_rel_err = np.abs(cell_areas_mc - cell_areas_ref) / cell_areas_ref
+    # fig, axs = plt.subplots(ncols=2)
+    # plt.colorbar(axs[0].imshow(mc_rel_err, norm="log"))
+    # axs[0].set_title("mc relative error (with np as reference)")
+    # res = ecdf(mc_rel_err[~np.isnan(mc_rel_err)])
+    # res.cdf.plot(ax=axs[1])
+    # axs[1].set(xlabel="relative error", title="relative error CDF")
+    # axs[1].set_xscale("log")
+    # plt.show()
 
 
 def main(rows, cols):
@@ -53,9 +107,7 @@ def main(rows, cols):
         params["vertex_texcoords"] = dr.auto.ad.Float(np.ravel(texcoords))
         params["faces"] = dr.auto.ad.UInt(np.ravel(faces))
     else:
-        # make unit size so that Monte Carlo areas do not need to be scaled in
-        # order to be correct. This will allow us to use the area test.
-        mesh = random_mi_mesh(size=(rows, cols), offset=(0, 0))
+        mesh = random_mi_mesh(offset=(0, 0))
         params = mi.traverse(mesh)
         vertices = params["vertex_positions"].numpy().reshape(-1, 3)
         texcoords = params["vertex_texcoords"].numpy().reshape(-1, 2)
@@ -74,13 +126,6 @@ def main(rows, cols):
     if os.path.exists(ref_filename):
         ref = np.load(ref_filename)
     else:
-        # ref = compute_cell_areas_mc(
-        #     mesh,
-        #     rows,
-        #     cols,
-        #     samples_per_cell=10_000,
-        #     normalize=False,
-        # )
         print("computing reference cell areas...")
         start = perf_counter()
         ref = compute_cell_areas_sh(mesh, rows, cols)
