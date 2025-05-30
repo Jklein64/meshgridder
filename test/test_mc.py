@@ -4,7 +4,7 @@ Tests for the area computation method based on Monte-Carlo methods.
 
 import mitsuba as mi
 import numpy as np
-from common import random_mi_mesh
+from common import compute_mesh_area, random_mi_mesh
 from pytest import approx
 
 from meshgridder.mc import _generate_samples, compute_cell_areas
@@ -56,21 +56,6 @@ def test_correct_area_sum():
         mesh, grid_rows, grid_cols, samples=10_000_000
     )
     mesh_area = np.sum(cell_areas)
-    mesh_area_ref = _mesh_area(mesh)
+    mesh_area_ref = compute_mesh_area(mesh)
     # this relative error is not great
     assert mesh_area == approx(mesh_area_ref, rel=1e-3)
-
-
-def _mesh_area(mesh):
-    params = mi.traverse(mesh)
-    vertices = params["vertex_positions"].numpy().reshape(-1, 3)
-    faces = params["faces"].numpy().reshape(-1, 3)
-    area = 0.0
-    for tri in vertices[faces]:
-        area += _triangle_area(tri)
-    return area
-
-
-def _triangle_area(vertices):
-    v0, v1, v2 = vertices
-    return 1 / 2 * np.linalg.norm(np.cross(v1 - v0, v2 - v0))
