@@ -11,6 +11,7 @@ from common import random_mi_mesh
 from line_profiler import profile
 
 from meshgridder.dda import compute_cell_areas as compute_cell_areas_dda
+from meshgridder.dr import compute_cell_areas as compute_cell_areas_dr
 from meshgridder.mc import compute_cell_areas as compute_cell_areas_mc
 from meshgridder.sh import compute_cell_areas as compute_cell_areas_sh
 from meshgridder.tri import compute_cell_areas as compute_cell_areas_tri
@@ -30,6 +31,8 @@ def compute_cell_areas(mesh, grid_rows, grid_cols, method):
             return profile(compute_cell_areas_mc)(mesh, grid_rows, grid_cols)
         case "dda":
             return profile(compute_cell_areas_dda)(mesh, grid_rows, grid_cols)
+        case "dr":
+            return profile(compute_cell_areas_dr)(mesh, grid_rows, grid_cols)
         case _:
             raise ValueError(f'Unknown method: "{method}"')
 
