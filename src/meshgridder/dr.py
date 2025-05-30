@@ -20,14 +20,8 @@ def compute_cell_areas(
     mesh_params = mi.traverse(mesh)
     vertices = dr.reshape(Array3f, mesh_params["vertex_positions"], (3, -1))
     faces = dr.reshape(Array3u, mesh_params["faces"], (3, -1))
-
-    e0 = Array3f(1, 0, 0)
-    e1 = Array3f(0, 1, 0)
     # create basis vectors whose span is the projection plane
-    basis_u = e1 if dr.norm(e0 - proj_normal) < dr.epsilon(Float) else e0
-    basis_u = dr.normalize(basis_u - dr.dot(basis_u, proj_normal) * proj_normal)
-    basis_v = dr.normalize(dr.cross(basis_u, proj_normal))
-
+    basis_u, basis_v = mi.coordinate_system(proj_normal)
     # project and normalize vertices to [0, 1]
     vertices_u = dr.dot(vertices, basis_u)
     vertices_v = dr.dot(vertices, basis_v)
