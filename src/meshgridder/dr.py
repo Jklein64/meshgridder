@@ -9,12 +9,13 @@ from drjit.auto.ad import Array2f, Array3f, Array3u, Float, TensorXf, UInt
 
 def compute_cell_areas(
     mesh,
-    grid_rows: int,
-    grid_cols: int,
+    rows: int,
+    cols: int,
     proj_normal=Array3f(0, 0, 1),
     samples=1_000_000,
+    return_mesh=False,
 ):
-    spp = int(samples / (grid_rows * grid_cols))
+    spp = int(samples / (rows * cols))
 
     mesh_params = mi.traverse(mesh)
     vertices = dr.reshape(Array3f, mesh_params["vertex_positions"], (3, -1))
@@ -25,7 +26,6 @@ def compute_cell_areas(
     # create basis vectors whose span is the projection plane
     basis_u = e1 if dr.norm(e0 - proj_normal) < dr.epsilon(Float) else e0
     basis_u = dr.normalize(basis_u - dr.dot(basis_u, proj_normal) * proj_normal)
-    # TODO check orientation
     basis_v = dr.normalize(dr.cross(basis_u, proj_normal))
 
     # project and normalize vertices to [0, 1]
@@ -54,30 +54,33 @@ def compute_cell_areas(
 
     # generate spp samples per grid cell
     center_u, center_v = dr.meshgrid(
-        (dr.arange(Float, grid_cols) + 0.5) / grid_cols,
-        (dr.arange(Float, grid_rows) + 0.5) / grid_rows,
+        (dr.arange(Float, cols) + 0.5) / cols,
+        (dr.arange(Float, rows) + 0.5) / rows,
     )
     center_uv = Array2f(
         dr.repeat(center_u, count=spp),
         dr.repeat(center_v, count=spp),
     )
-    rng = dr.auto.ad.PCG32(size=2 * spp * grid_rows * grid_cols)
+    rng = dr.auto.ad.PCG32(size=2 * spp * rows * cols)
     jitter = dr.reshape(Array2f, rng.next_float32(), shape=(2, -1))
-    jitter = (jitter - 0.5) / Array2f(grid_cols, grid_rows)
+    jitter = (jitter - 0.5) / Array2f(cols, rows)
     sample_uv = center_uv + jitter
 
     # query the mesh parameterization. si.t is inf when it misses
     si = texcoord_mesh.eval_parameterization(sample_uv)
     sample_n = si.n
 
-    # calculate and average scaling factors and average
+    # calculate and average scaling factors
     f = dr.rcp(dr.abs_dot(sample_n, proj_normal))
-    all_idx = dr.arange(UInt, spp * grid_rows * grid_cols)
+    all_idx = dr.arange(UInt, spp * rows * cols)
     dr.scatter(f, value=0, index=all_idx, active=dr.isinf(si.t))
     f_mean = dr.block_sum(value=f, block_size=spp) / spp
 
     # apply scaling factors to flattened cell areas
-    cell_area_flat = (bbox_extents.x / grid_cols) * (bbox_extents.y / grid_rows)
-    cell_areas = f_mean * cell_area_flat
+    cell_area_flat = (bbox_extents.x / cols) * (bbox_extents.y / rows)
+    cell_areas = dr.reshape(TensorXf, f_mean * cell_area_flat, (rows, cols))
 
-    return dr.reshape(TensorXf, cell_areas, shape=(grid_rows, grid_cols))
+    if return_mesh:
+        return cell_areas, texcoord_mesh
+    else:
+        return cell_areas
