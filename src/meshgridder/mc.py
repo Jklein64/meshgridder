@@ -2,7 +2,6 @@
 Approximate the surface areas of rectangular cells wrapped onto a mesh.
 """
 
-import drjit as dr
 import mitsuba as mi
 import numpy as np
 
@@ -60,6 +59,6 @@ def _query(mesh, uvs):
     uvs_dr = mi.Point2f(np.ravel(uvs[..., 0]), np.ravel(uvs[..., 1]))
     si = mesh.eval_parameterization(uvs_dr)
     grid_shape = uvs.shape[:-1]
-    # unravel the scene intersection data, renormalizing normal vectors
-    n = np.moveaxis(dr.normalize(si.n).numpy().reshape(3, *grid_shape), 0, -1)
+    # unravel the scene intersection data
+    n = np.moveaxis(si.n.numpy().reshape(3, *grid_shape), 0, -1)
     return n
