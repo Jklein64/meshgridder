@@ -61,5 +61,5 @@ def _query(mesh, uvs):
     si = mesh.eval_parameterization(uvs_dr)
     grid_shape = uvs.shape[:-1]
     # unravel the scene intersection data, renormalizing normal vectors
-    n = np.moveaxis(dr.normalize(si.n).numpy().reshape(3, *grid_shape), 0, -1)
+    n = np.moveaxis(si.n.numpy().reshape(3, *grid_shape), 0, -1)
     return n
