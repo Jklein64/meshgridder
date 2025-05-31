@@ -96,6 +96,7 @@ def compute_cell_areas(
     # calculate and average scaling factors
     f = dr.rcp(dr.abs_dot(sample_n, proj_normal))
     all_idx = dr.arange(mi.UInt, spp * rows * cols)
+    # slightly faster than using dr.compress() to make an index array
     dr.scatter(f, value=0, index=all_idx, active=dr.isinf(si.t))
     f_mean = dr.block_sum(value=f, block_size=spp) / spp
 
