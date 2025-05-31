@@ -23,6 +23,7 @@ def compute_cell_areas(
     faces = dr.reshape(mi.Vector3u, mesh_params["faces"], shape=(3, -1))
     # project and normalize vertices to [0, 1]
     proj_frame = mi.Frame3f(proj_normal)
+    proj_frame.t *= -1  # invert vertical axis for texturing
     plane_st = proj_frame.to_local(vert_global).xy
     bbox = mi.BoundingBox2f(dr.min(plane_st, axis=1), dr.max(plane_st, axis=1))
     texcoords = (plane_st - bbox.min) / bbox.extents()
