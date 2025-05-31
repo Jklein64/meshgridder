@@ -4,36 +4,28 @@ Equivalent to mc.py but implemented entirely in drjit.
 
 import drjit as dr
 import mitsuba as mi
-from mitsuba import (
-    Float,
-    Point2f,
-    Point3f,
-    TensorXf,
-    UInt,
-    Vector2f,
-    Vector3f,
-    Vector3u,
-)
 
 
 def compute_cell_areas(
     mesh,
     rows: int,
     cols: int,
-    proj_normal=Vector3f(0, 0, 1),
+    proj_normal=None,
     samples=1_000_000,
     return_mesh=False,
 ):
+    if proj_normal is None:
+        proj_normal = mi.Vector3f(0, 0, 1)
+
     mesh_params = mi.traverse(mesh)
-    vert_global = dr.reshape(Point3f, mesh_params["vertex_positions"], (3, -1))
-    faces = dr.reshape(Vector3u, mesh_params["faces"], (3, -1))
+    raw_vertices = mesh_params["vertex_positions"]
+    vert_global = dr.reshape(mi.Point3f, raw_vertices, shape=(3, -1))
+    faces = dr.reshape(mi.Vector3u, mesh_params["faces"], shape=(3, -1))
     # project and normalize vertices to [0, 1]
     proj_frame = mi.Frame3f(proj_normal)
-    vert_local = proj_frame.to_local(vert_global)
-    bbox_min = Point2f(dr.min(vert_local.x), dr.min(vert_local.y))
-    bbox_max = Point2f(dr.max(vert_local.x), dr.max(vert_local.y))
-    bbox_extents = Vector2f(bbox_max.x - bbox_min.x, bbox_max.y - bbox_min.y)
-    texcoords = (vert_local.xy - bbox_min) / bbox_extents
+    plane_st = proj_frame.to_local(vert_global).xy
+    bbox = mi.BoundingBox2f(dr.min(plane_st, axis=1), dr.max(plane_st, axis=1))
+    texcoords = (plane_st - bbox.min) / bbox.extents()
 
     # create new mesh with the computed texcoords
     texcoord_mesh = mi.Mesh(
@@ -51,16 +43,16 @@ def compute_cell_areas(
     spp = int(samples / (rows * cols))
     # generate spp samples per grid cell
     center_u, center_v = dr.meshgrid(
-        (dr.arange(Float, cols) + 0.5) / cols,
-        (dr.arange(Float, rows) + 0.5) / rows,
+        (dr.arange(mi.Float, cols) + 0.5) / cols,
+        (dr.arange(mi.Float, rows) + 0.5) / rows,
     )
-    center_uv = Point2f(
+    center_uv = mi.Point2f(
         dr.repeat(center_u, count=spp),
         dr.repeat(center_v, count=spp),
     )
     rng = dr.auto.ad.PCG32(size=2 * spp * rows * cols)
-    jitter = dr.reshape(Vector2f, rng.next_float32(), shape=(2, -1))
-    jitter = (jitter - 0.5) / Vector2f(cols, rows)
+    jitter = dr.reshape(mi.Vector2f, rng.next_float32(), shape=(2, -1))
+    jitter = (jitter - 0.5) / mi.Vector2f(cols, rows)
     sample_uv = center_uv + jitter
 
     # query the mesh parameterization. si.t is inf when it misses
@@ -69,13 +61,13 @@ def compute_cell_areas(
 
     # calculate and average scaling factors
     f = dr.rcp(dr.abs_dot(sample_n, proj_normal))
-    all_idx = dr.arange(UInt, spp * rows * cols)
+    all_idx = dr.arange(mi.UInt, spp * rows * cols)
     dr.scatter(f, value=0, index=all_idx, active=dr.isinf(si.t))
     f_mean = dr.block_sum(value=f, block_size=spp) / spp
 
     # apply scaling factors to flattened cell areas
-    cell_area_flat = (bbox_extents.x / cols) * (bbox_extents.y / rows)
-    cell_areas = dr.reshape(TensorXf, f_mean * cell_area_flat, (rows, cols))
+    cell_area_flat = (bbox.extents().x / cols) * (bbox.extents().y / rows)
+    cell_areas = dr.reshape(mi.TensorXf, f_mean * cell_area_flat, (rows, cols))
 
     if return_mesh:
         return cell_areas, texcoord_mesh
