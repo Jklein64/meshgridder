@@ -14,6 +14,7 @@ def compute_cell_areas(
     cols: int,
     proj_normal=None,
     samples=1_000_000,
+    samples_per_block=10_000_000,
     return_mesh=False,
 ):
     if proj_normal is None:
@@ -61,35 +62,67 @@ def compute_cell_areas(
     params["faces"] = dr.ravel(faces)
     params.update()
 
-    spp = int(samples / (rows * cols))
-    # generate spp samples per grid cell
-    center_u, center_v = dr.meshgrid(
-        (dr.arange(mi.Float, cols) + 0.5) / cols,
-        (dr.arange(mi.Float, rows) + 0.5) / rows,
-    )
-    center_uv = mi.Point2f(
-        dr.repeat(center_u, count=spp),
-        dr.repeat(center_v, count=spp),
-    )
-    rng = dr.auto.ad.PCG32(size=2 * spp * rows * cols)
-    jitter = dr.reshape(mi.Vector2f, rng.next_float32(), shape=(2, -1))
-    jitter = (jitter - 0.5) / mi.Vector2f(cols, rows)
-    sample_uv = center_uv + jitter
+    if samples < rows * cols:
+        warnings.warn(
+            f"Area computation was requested using {samples} samples, but it "
+            f"requires at least {rows * cols} samples for a {rows}x{cols} "
+            f"grid. Using {rows * cols} samples instead..."
+        )
+        samples = rows * cols
+    if samples_per_block < rows * cols:
+        warnings.warn(
+            f"Area computation was requested using {samples_per_block} samples "
+            f"per block, but it requires at least {rows * cols} for a {rows}x"
+            f"{cols} grid. Using {rows * cols} samples per block instead..."
+        )
+        samples_per_block = rows * cols
 
-    # query the mesh parameterization. si.t is inf when it misses
-    si = texcoord_mesh.eval_parameterization(sample_uv)
-    sample_n = si.n
+    spp_total = 0
+    samples_remaining = samples
+    f_sum = dr.zeros(mi.Float, rows * cols)
+    # divide into blocks. samples_per_block should be chosen based on the
+    # system's memory. Too large and things slow down significantly
+    while samples_remaining > 0:
+        if samples_remaining // samples_per_block == 0:
+            spp = max(1, int(samples_remaining / (rows * cols)))
+        else:
+            spp = max(1, int(samples_per_block / (rows * cols)))
+            samples_remaining -= samples_per_block
 
-    # calculate and average scaling factors
-    f = dr.rcp(dr.abs_dot(sample_n, proj_normal))
-    all_idx = dr.arange(mi.UInt, spp * rows * cols)
-    # slightly faster than using dr.compress() to make an index array
-    dr.scatter(f, value=0, index=all_idx, active=dr.isinf(si.t))
-    f_mean = dr.block_sum(value=f, block_size=spp) / spp
+        spp_total += spp
+
+        # generate spp samples per grid cell
+        center_u, center_v = dr.meshgrid(
+            (dr.arange(mi.Float, cols) + 0.5) / cols,
+            (dr.arange(mi.Float, rows) + 0.5) / rows,
+        )
+        center_uv = mi.Point2f(
+            dr.repeat(center_u, count=spp),
+            dr.repeat(center_v, count=spp),
+        )
+        rng = dr.auto.ad.PCG32(size=2 * spp * rows * cols)
+        jitter = dr.reshape(mi.Vector2f, rng.next_float32(), shape=(2, -1))
+        jitter = (jitter - 0.5) / mi.Vector2f(cols, rows)
+        sample_uv = center_uv + jitter
+
+        # query the mesh parameterization. si.t is inf when it misses
+        si = texcoord_mesh.eval_parameterization(sample_uv)
+        sample_n = si.n
+
+        # calculate and average scaling factors
+        f = dr.rcp(dr.abs_dot(sample_n, proj_normal))
+        all_idx = dr.arange(mi.UInt, spp * rows * cols)
+        # slightly faster than using dr.compress() to make an index array
+        dr.scatter(f, value=0, index=all_idx, active=dr.isinf(si.t))
+        f_sum += dr.block_sum(value=f, block_size=spp)
 
     # apply scaling factors to flattened cell areas
     cell_area_flat = (bbox.extents().x / cols) * (bbox.extents().y / rows)
-    cell_areas = dr.reshape(mi.TensorXf, f_mean * cell_area_flat, (rows, cols))
+    cell_areas = dr.reshape(
+        mi.TensorXf,
+        value=f_sum / spp_total * cell_area_flat,
+        shape=(rows, cols),
+    )
 
     if return_mesh:
         return cell_areas, texcoord_mesh
