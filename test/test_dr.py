@@ -2,6 +2,8 @@
 Tests for the dr method, which is similar to mc.
 """
 
+import warnings
+
 import drjit as dr
 import mitsuba as mi
 import numpy as np
@@ -45,8 +47,8 @@ def test_correct_when_rotated_mesh():
 
     mesh_area_ref = compute_mesh_area(mesh)
 
-    # using a flat projection plane should fail
-    try:
+    with warnings.catch_warnings(record=True) as w:
+        # using a flat projection plane should fail and give a warning
         cell_areas = compute_cell_areas(
             mesh,
             rows=150,
@@ -55,15 +57,11 @@ def test_correct_when_rotated_mesh():
         ).numpy()
         mesh_area = np.sum(cell_areas)
 
-        # this assertion should fail
-        assert mesh_area == approx(mesh_area_ref, rel=1e-3)
-        # it didn't fail, so the test failed
-        assert False
+        assert mesh_area != approx(mesh_area_ref, rel=1e-3)
+        # implicitly checks that a warning was given
+        assert "bijective" in str(w[0].message)
 
-    except AssertionError:
-        assert True
-
-    # but using the correct projection plane should succeed
+    # using the correct projection plane should succeed
     cell_areas = compute_cell_areas(
         mesh,
         rows=150,

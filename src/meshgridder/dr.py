@@ -2,6 +2,8 @@
 Equivalent to mc.py but implemented entirely in drjit.
 """
 
+import warnings
+
 import drjit as dr
 import mitsuba as mi
 
@@ -21,12 +23,43 @@ def compute_cell_areas(
     raw_vertices = mesh_params["vertex_positions"]
     vert_global = dr.reshape(mi.Point3f, raw_vertices, shape=(3, -1))
     faces = dr.reshape(mi.Vector3u, mesh_params["faces"], shape=(3, -1))
-    # project and normalize vertices to [0, 1]
+    # project and normalize vertices into texcoords
     proj_frame = mi.Frame3f(proj_normal)
     proj_frame.t *= -1  # invert vertical axis for texturing
     plane_st = proj_frame.to_local(vert_global).xy
     bbox = mi.BoundingBox2f(dr.min(plane_st, axis=1), dr.max(plane_st, axis=1))
     texcoords = (plane_st - bbox.min) / bbox.extents()
+
+    # check whether the texture mapping is bijective
+    ray_origin = proj_frame.to_world(mi.Point3f(plane_st.x, plane_st.y, 0))
+    # need to add the mesh to a scene to use ray_intersect
+    scene = mi.load_dict({"type": "scene", "mesh": mesh})
+    # checking two rays like this is the same as checking a line
+    for ray_direction in (proj_normal, -proj_normal):
+        ray = mi.Ray3f(o=ray_origin, d=ray_direction)
+        si = scene.ray_intersect(ray)
+        active_idx = dr.compress(dr.isfinite(si.t))
+        if dr.width(active_idx) == 0:
+            # nothing to compare
+            continue
+        vert_actual = dr.gather(mi.Point3f, vert_global, index=active_idx)
+        vert_first_hit = dr.gather(mi.Point3f, si.p, index=active_idx)
+        # the parameterization works by associating each vertex with a texcoord
+        # that is just a scaled and shifted copy of the vertex's projection
+        # onto a plane with the given normal vector. The parameterization is
+        # not bijective when the unprojected points cannot be recovered by
+        # casting a ray from the projected point position in the direction of
+        # the given normal vector (and the opposite direction) and storing the
+        # first point of intersection.
+        if not dr.allclose(vert_actual, vert_first_hit):
+            warnings.warn(
+                "The mesh parameterization is not bijective, which may "
+                "significantly impact the accuracy of cell surface area "
+                "computation. Try again using a different projection plane "
+                "orientation.",
+                category=RuntimeWarning,
+            )
+            break
 
     # create new mesh with the computed texcoords
     texcoord_mesh = mi.Mesh(

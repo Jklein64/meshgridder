@@ -36,7 +36,7 @@ def main():
     # cell_areas[0, 0] should be the area of the top left most cell
 
     # texture a rectangle too
-    proj_center = mi.Point3f(0, 0, -1)
+    proj_center = mi.Point3f(0, 0, 0)
     params = mi.traverse(texcoord_mesh)
     vertices = dr.reshape(mi.Point3f, params["vertex_positions"], (3, -1))
     # create basis vectors whose span is the projection plane
@@ -44,22 +44,37 @@ def main():
     plane_st = proj_frame.to_local(vertices).xy
     bbox = mi.BoundingBox2f(dr.min(plane_st, axis=1), dr.max(plane_st, axis=1))
 
-    rect_vertices = []
+    # create a rectangle mesh
+    rect_vertices = dr.empty(mi.Point3f, shape=4)
     for i in range(4):
-        corner = bbox.corner(i)
-        corner_xyz = proj_frame.to_world(mi.Vector3f(corner.x, corner.y, 0))
-        rect_vertices.append((corner_xyz + proj_center).numpy())
-    rect_vertices = np.array(rect_vertices)
-    rect_texcoords = np.array([[0, 1], [1, 1], [0, 0], [1, 0]])
-    rect_faces = np.array([[0, 1, 3], [0, 3, 2]])
+        corner_st = bbox.corner(i)
+        corner_stn = mi.Point3f(corner_st.x, corner_st.y, 0)
+        corner_xyz = proj_frame.to_world(corner_stn) + proj_center
+        dr.scatter(rect_vertices, corner_xyz, index=i)
+    rect_texcoords = mi.Point2f([0, 1, 0, 1], [1, 1, 0, 0])
+    rect_faces = mi.Vector3u([0, 0], [1, 3], [3, 2])
     rect_mesh = mi.Mesh(
         "rect", vertex_count=4, face_count=2, has_vertex_texcoords=True
     )
     rect_params = mi.traverse(rect_mesh)
-    rect_params["vertex_positions"] = mi.Float(np.ravel(rect_vertices))
-    rect_params["vertex_texcoords"] = mi.Float(np.ravel(rect_texcoords))
-    rect_params["faces"] = mi.UInt(np.ravel(rect_faces))
+    rect_params["vertex_positions"] = dr.ravel(rect_vertices)
+    rect_params["vertex_texcoords"] = dr.ravel(rect_texcoords)
+    rect_params["faces"] = dr.ravel(rect_faces)
     rect_params.update()
+
+    # visualize query rays
+    ray_origins = mi.Point3f(plane_st.x, plane_st.y, 0)
+    rays = mi.Ray3f(o=proj_frame.to_world(ray_origins), d=proj_normal)
+    cylinders = {}
+    for i in range(dr.width(vertices)):
+        p0 = dr.gather(mi.Point3f, rays.o, i)
+        cylinders[f"cylinder-{i}"] = {
+            "type": "cylinder",
+            "p0": np.squeeze(p0.numpy()),
+            "p1": np.squeeze((p0 + 10 * proj_normal).numpy()),
+            "radius": 0.01,
+            "material": {"type": "diffuse"},
+        }
 
     scene = mi.load_dict(
         {
@@ -69,15 +84,16 @@ def main():
             "sensor": {
                 "type": "perspective",
                 "to_world": mi.ScalarTransform4f().look_at(
-                    origin=[0, -10, 4], target=[0, 0, -0.5], up=[0, 0, 1]
+                    origin=[5, -10, 4], target=[0, 0, -0.5], up=[0, 0, 1]
                 ),
             },
             "mesh": texture_mesh(texcoord_mesh, cell_areas),
             "rect": texture_mesh(rect_mesh, cell_areas),
+            **cylinders,
         }
     )
 
-    img = mi.render(scene)
+    img = mi.render(scene, spp=64)
     bitmap = mi.util.convert_to_bitmap(img)
     fig = plt.figure(1)
     ax = fig.add_subplot()
