@@ -32,10 +32,10 @@ def test_correct_cell_area_sum():
     assert total_surface_area == approx(true_surface_area, rel=1e-2)
 
 
-def test_np_tri_compute_same_values():
+def test_sh_tri_compute_same_values():
     # create a random mesh
     mi_mesh = random_mi_mesh()
-    # 100x100 is the largest test with a reasonable time for the np method
+    # 100x100 is the largest test with a reasonable time for the sh method
     grid_size = (100, 100)
     cell_areas_np = compute_cell_areas_sh(mi_mesh, *grid_size)
     cell_areas_tri = compute_cell_areas(mi_mesh, *grid_size, r_tol=1e-2)
