@@ -31,35 +31,24 @@ def compute_cell_areas(
     texcoords = (plane_st - bbox.min) / bbox.extents()
 
     # check whether the texture mapping is bijective
-    ray_origin = proj_frame.to_world(mi.Point3f(plane_st.x, plane_st.y, 0))
-    # need to add the mesh to a scene to use ray_intersect
-    scene = mi.load_dict({"type": "scene", "mesh": mesh})
-    # checking two rays like this is the same as checking a line
-    for ray_direction in (proj_normal, -proj_normal):
-        ray = mi.Ray3f(o=ray_origin, d=ray_direction)
-        si = scene.ray_intersect(ray)
-        active_idx = dr.compress(dr.isfinite(si.t))
-        if dr.width(active_idx) == 0:
-            # nothing to compare
-            continue
-        vert_actual = dr.gather(mi.Point3f, vert_global, index=active_idx)
-        vert_first_hit = dr.gather(mi.Point3f, si.p, index=active_idx)
-        # the parameterization works by associating each vertex with a texcoord
-        # that is just a scaled and shifted copy of the vertex's projection
-        # onto a plane with the given normal vector. The parameterization is
-        # not bijective when the unprojected points cannot be recovered by
-        # casting a ray from the projected point position in the direction of
-        # the given normal vector (and the opposite direction) and storing the
-        # first point of intersection.
-        if not dr.allclose(vert_actual, vert_first_hit):
-            warnings.warn(
-                "The mesh parameterization is not bijective, which may "
-                "significantly impact the accuracy of cell surface area "
-                "computation. Try again using a different projection plane "
-                "orientation.",
-                category=RuntimeWarning,
-            )
-            break
+    p0 = dr.gather(mi.Point3f, vert_global, index=faces.x)
+    p1 = dr.gather(mi.Point3f, vert_global, index=faces.y)
+    p2 = dr.gather(mi.Point3f, vert_global, index=faces.z)
+    n = dr.cross(p1 - p0, p2 - p0)
+    # the parameterization works by associating each vertex with a texcoord
+    # that is just a scaled and shifted copy of the vertex's projection
+    # onto a plane with the given normal vector. The parameterization is not
+    # bijective when the mesh "folds over" itself when viewed along the given
+    # normal vector. Assuming the input mesh is topologically equivalent to a
+    # plane, the mesh "folds over" itself when any face normal points in the
+    # opposite direction of the given projection normal vector.
+    if not dr.all(dr.dot(n, proj_normal) > 0):
+        warnings.warn(
+            "The mesh parameterization is not bijective, which may "
+            "significantly impact the accuracy of cell surface area "
+            "computation. Try using a different projection plane orientation.",
+            category=RuntimeWarning,
+        )
 
     # create new mesh with the computed texcoords
     texcoord_mesh = mi.Mesh(
