@@ -4,26 +4,35 @@ Equivalent to mc.py but implemented entirely in drjit.
 
 import drjit as dr
 import mitsuba as mi
-from drjit.auto.ad import Array2f, Array3f, Array3u, Float, TensorXf, UInt
+from mitsuba import (
+    Float,
+    Point2f,
+    Point3f,
+    TensorXf,
+    UInt,
+    Vector2f,
+    Vector3f,
+    Vector3u,
+)
 
 
 def compute_cell_areas(
     mesh,
     rows: int,
     cols: int,
-    proj_normal=Array3f(0, 0, 1),
+    proj_normal=Vector3f(0, 0, 1),
     samples=1_000_000,
     return_mesh=False,
 ):
     mesh_params = mi.traverse(mesh)
-    vert_global = dr.reshape(Array3f, mesh_params["vertex_positions"], (3, -1))
-    faces = dr.reshape(Array3u, mesh_params["faces"], (3, -1))
+    vert_global = dr.reshape(Point3f, mesh_params["vertex_positions"], (3, -1))
+    faces = dr.reshape(Vector3u, mesh_params["faces"], (3, -1))
     # project and normalize vertices to [0, 1]
     proj_frame = mi.Frame3f(proj_normal)
     vert_local = proj_frame.to_local(vert_global)
-    bbox_min = Array2f(dr.min(vert_local.x), dr.min(vert_local.y))
-    bbox_max = Array2f(dr.max(vert_local.x), dr.max(vert_local.y))
-    bbox_extents = Array2f(bbox_max.x - bbox_min.x, bbox_max.y - bbox_min.y)
+    bbox_min = Point2f(dr.min(vert_local.x), dr.min(vert_local.y))
+    bbox_max = Point2f(dr.max(vert_local.x), dr.max(vert_local.y))
+    bbox_extents = Vector2f(bbox_max.x - bbox_min.x, bbox_max.y - bbox_min.y)
     texcoords = (vert_local.xy - bbox_min) / bbox_extents
 
     # create new mesh with the computed texcoords
@@ -45,13 +54,13 @@ def compute_cell_areas(
         (dr.arange(Float, cols) + 0.5) / cols,
         (dr.arange(Float, rows) + 0.5) / rows,
     )
-    center_uv = Array2f(
+    center_uv = Point2f(
         dr.repeat(center_u, count=spp),
         dr.repeat(center_v, count=spp),
     )
     rng = dr.auto.ad.PCG32(size=2 * spp * rows * cols)
-    jitter = dr.reshape(Array2f, rng.next_float32(), shape=(2, -1))
-    jitter = (jitter - 0.5) / Array2f(cols, rows)
+    jitter = dr.reshape(Vector2f, rng.next_float32(), shape=(2, -1))
+    jitter = (jitter - 0.5) / Vector2f(cols, rows)
     sample_uv = center_uv + jitter
 
     # query the mesh parameterization. si.t is inf when it misses
