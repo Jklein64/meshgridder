@@ -50,4 +50,4 @@ def test_correct_cell_area_sum():
         true_surface_area += polygon_area(tri_vertices, dim="3d")
 
     # expect relative error of 1e-5 instead of 1e-6 due to the nudging
-    assert total_surface_area == approx(true_surface_area, rel=1e-5)
+    assert total_surface_area == approx(true_surface_area, rel=1e-6)
