@@ -32,8 +32,7 @@ def compute_cell_areas(
     texcoords = (plane_st - bbox.min) / bbox.extents()
 
     # check whether the texture mapping is bijective
-    p = [dr.gather(mi.Point3f, vert_global, index=faces[k]) for k in range(3)]
-    n = dr.cross(p[1] - p[0], p[2] - p[0])
+    n = mesh.face_normal(index=dr.arange(mi.UInt, mesh.face_count()))
     # the parameterization works by associating each vertex with a texcoord
     # that is just a scaled and shifted copy of the vertex's projection
     # onto a plane with the given normal vector. The parameterization is not
